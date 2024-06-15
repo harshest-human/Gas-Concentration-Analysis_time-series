@@ -86,6 +86,58 @@ write.csv(GAS.long, "GAS.long.csv", row.names = FALSE)
 
 
 ####### Data Analysis ########
+GAS.long <- fread("GAS.long.csv")
+
+GAS.long <- GAS.long[sampling.point != 52]
+GAS.long$sampling.point <- as.factor(GAS.long$sampling.point)
+
+# Calculate average values for each gas
+avg_CO2 <- GAS.long[, mean(CO2, na.rm = TRUE)]
+avg_CH4 <- GAS.long[, mean(CH4, na.rm = TRUE)]
+avg_NH3 <- GAS.long[, mean(NH3, na.rm = TRUE)]
+avg_H2O <- GAS.long[, mean(H2O, na.rm = TRUE)]
+
+# Calculate relative errors for each gas
+GAS.long[, Err_CO2 := ((CO2 - avg_CO2) / avg_CO2) * 100, by = sampling.point]
+GAS.long[, Err_CH4 := ((CH4 - avg_CH4) / avg_CH4) * 100, by = sampling.point]
+GAS.long[, Err_NH3 := ((NH3 - avg_NH3) / avg_NH3) * 100, by = sampling.point]
+GAS.long[, Err_H2O := ((H2O - avg_H2O) / avg_H2O) * 100, by = sampling.point]
+
+
+######## 0. Plotting errors using ggplot2 #########
+
+# Plot CO2 standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2)) +
+        geom_line(stat = "summary", fun.y = "mean", aes(group = 1), size = 1) +
+        geom_point(stat = "summary", fun.y = "mean", size = 3, shape = 21, fill = "yellow2") +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
+        theme_minimal()
+
+# Plot CH4 standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = Err_CH4)) +
+        geom_line(stat = "summary", fun.y = "mean", aes(group = 1), size = 1) +
+        geom_point(stat = "summary", fun.y = "mean", size = 3, shape = 21, fill = "green2") +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CH4 Concentration by Sampling Point") +
+        theme_minimal()
+
+# Plot NH3 standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3)) +
+        geom_line(stat = "summary", fun.y = "mean", aes(group = 1), size = 1) +
+        geom_point(stat = "summary", fun.y = "mean", size = 3, shape = 21, fill = "orange2") +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of NH3 Concentration by Sampling Point") +
+        theme_minimal()
+
+# Plot H2O standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = Err_H2O)) +
+        geom_line(stat = "summary", fun.y = "mean", aes(group = 1), size = 1) +
+        geom_point(stat = "summary", fun.y = "mean", size = 3, shape = 21, fill = "blue2") +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of H2O Concentration by Sampling Point") +
+        theme_minimal()
+
 ####### 1. Plotting using ggplot2 ########
 ggplot(GAS.long, aes(x = sampling.point, y = CO2, group = 1)) +
         geom_line(color = "blue") +
