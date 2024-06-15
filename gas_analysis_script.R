@@ -31,13 +31,16 @@ CRDS.comb$DATE.TIME = as.POSIXct(CRDS.comb$DATE.TIME, format = "%Y-%m-%d %H:%M:%
 data.table::setDT(FTIR.comb)
 data.table::setDT(CRDS.comb)
 
-
-####### write ##########
+# combine FTIR and CRDS
 GAS.comb <- FTIR.comb[CRDS.comb, on = .(DATE.TIME), roll = "nearest"]
+
+# write the combined dataframe
 write.csv(GAS.comb, "GAS.comb.csv", row.names = FALSE)
 
 
-####### read ##########
+
+######## Data reshaping ##########
+# Import the final combined dataframe
 GAS.comb <- read.csv("D:/Data Analysis/Gas-Concentration-Analysis_time-series/GAS.comb.csv")
 GAS.comb$DATE.TIME = as.POSIXct(GAS.comb$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
 
