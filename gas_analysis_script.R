@@ -76,9 +76,10 @@ GAS.long <- data.table(
 # Convert 'GAS.long' to data.table
 setDT(GAS.long)
 
-# Step 3: Optionally, reorder columns as needed
+# write after arranging columns
 GAS.long <- GAS.long[, .(DATE.TIME, ID, sampling.point, CO2, CH4, NH3, H2O)]
 
+write.csv(GAS.long, "GAS.long.csv", row.names = FALSE)
 
 
 ####### Data Analysis ########
