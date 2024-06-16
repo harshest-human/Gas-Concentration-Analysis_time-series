@@ -35,7 +35,7 @@ write.csv(GAS.comb, "GAS.comb.csv", row.names = FALSE)
 
 ######## Data reshaping ##########
 # Import the final combined dataframe
-GAS.comb <- read.csv("D:/Data Analysis/Gas-Concentration-Analysis_time-series/GAS.comb.csv")
+GAS.comb <- fread("D:/Data Analysis/Gas-Concentration-Analysis_time-series/GAS.comb.csv")
 GAS.comb$DATE.TIME = as.POSIXct(GAS.comb$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
 
 # Convert GAS.comb to a data.table if it's not already
@@ -250,8 +250,49 @@ hist(GAS.long$NH3, main="Histogram of NH3")
 
 # Perform ANOVA 
 summary(aov(CO2 ~ sampling.point, data = GAS.long))
-
 summary(aov(CH4 ~ sampling.point, data = GAS.long))
-
 summary(aov(NH3 ~ sampling.point, data = GAS.long))
+
+
+
+
+
+######## CRDS vs FTIR TEST #########
+######## Import Gas Data #########
+FTIR.test <- fread("D:/Data Analysis/GasmetCX4000_FTIR_Gas_Measurement/FTIR2_test.csv")
+CRDS.test <- fread("D:/Data Analysis/Picarro-G2508_CRDS_gas_measurement/CRDS.test.csv")
+
+# Rename levels
+FTIR.test$Messstelle.F2 <- factor(FTIR.test$Messstelle.F2, labels = "FTIR")
+CRDS.test$MPVPosition.P8 <- factor(CRDS.test$MPVPosition.P8, labels = "CRDS")
+
+######## Data combining ##########
+# convert into data.table
+data.table::setDT(FTIR.test)
+data.table::setDT(CRDS.test)
+
+# combine FTIR and CRDS
+GAS.test <- FTIR.test[CRDS.test, on = .(DATE.TIME), roll = "nearest"]
+
+# Create a new dataframe with the desired structure
+GAS.test.long <- data.table(
+        DATE.TIME = GAS.test$DATE.TIME,
+        sampling.point = c(GAS.test$Messstelle.F2, rep(GAS.test$MPVPosition.P8)),
+        CO2 = c(GAS.test$CO2.F2, GAS.test$CO2.P8),
+        CH4 = c(GAS.test$CH4.F2, GAS.test$CH4.P8),
+        NH3 = c(GAS.test$NH3.F2, GAS.test$NH3.P8),
+        H2O = c(GAS.test$H2O.F2, GAS.test$H2O.P8))
+
+# Convert 'GAS.long' to data.table
+setDT(GAS.test.long)
+
+# write after arranging columns
+GAS.test.long <- GAS.test.long[, .(DATE.TIME, ID, sampling.point, CO2, CH4, NH3, H2O)]
+
+# write the combined dataframe
+write.csv(GAS.test.long, "GAS.test.long.csv", row.names = FALSE)
+
+ggplot(GAS.test.long, aes(x= DATE.TIME, y = CO2, colour = as.factor(sampling.point))) + geom_line()
+ggplot(GAS.test.long, aes(x= DATE.TIME, y = CH4, colour = as.factor(sampling.point))) + geom_line()
+ggplot(GAS.test.long, aes(x= DATE.TIME, y = NH3, colour = as.factor(sampling.point))) + geom_line()
 
