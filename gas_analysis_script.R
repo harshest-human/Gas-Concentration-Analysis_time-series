@@ -179,6 +179,7 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_CO2, group = sampling.point, color
         labs(x = "Hour of Day", y = "Mean CO2 Concentration", 
              title = "Diel Variation in CO2 Concentration by Sampling Point") +
         scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        scale_y_continuous(limits = c(0, 1000), breaks = seq(0, 1000, by = 200))
         theme_minimal()
 
 ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color = sampling.point)) +
@@ -187,6 +188,7 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color
         labs(x = "Hour of Day", y = "Mean CH4 Concentration", 
              title = "Diel Variation in NH3 Concentration by Sampling Point") +
         scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20))
         theme_minimal()
 
 ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color = sampling.point)) +
@@ -195,7 +197,9 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color
         labs(x = "Hour of Day", y = "Mean NH3 Concentration", 
              title = "Diel Variation in NH3 Concentration by Sampling Point") +
         scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2))
         theme_minimal()
+        
 
 ######## Animating diel variations #############
 library(gganimate)
