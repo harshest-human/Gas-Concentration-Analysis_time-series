@@ -116,6 +116,7 @@ GAS.long[, vertical := ifelse(sampling.point %in% vertical_groups$top, "top",
 point_fill <- c("top" = "orange", "mid" = "green3", "bottom" = "steelblue1")
 
 
+######## Plotting relative error between sampling points #############
 # Plot CO2 standard error bar
 ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
@@ -124,7 +125,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical)) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
-        theme_minimal() + guides(fill = FALSE)  
+        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")   
 
 
 # Plot CH4 standard error bar
@@ -135,7 +136,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CH4, fill = vertical)) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CH4 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
-        theme_minimal() + guides(fill = FALSE)  
+        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
 
 # Plot NH3 standard error bar
 ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
@@ -145,7 +146,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of NH3 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
-        theme_minimal() + guides(fill = FALSE)  
+        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")    
 
 # Plot H2O standard error bar
 ggplot(GAS.long, aes(x = sampling.point, y = Err_H2O, fill = vertical)) +
@@ -155,4 +156,58 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_H2O, fill = vertical)) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of H2O % by Sampling Point") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
-        theme_minimal() + guides(fill = FALSE)  
+        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
+
+
+######## Plotting diel variations #############
+# Calculate Hour of Day
+GAS.long$Hour <- hour(GAS.long$DATE.TIME)
+
+# Aggregate data by hour for CO2 (similarly for CH4, NH3)
+hourly_summary <- GAS.long %>%
+        group_by(sampling.point, Hour) %>%
+        summarise(mean_CO2 = mean(CO2),
+                  mean_CH4 = mean(CH4),
+                  mean_NH3 = mean(NH3))
+
+# Plot diel variation for CO2
+ggplot(hourly_summary, aes(x = Hour, y = mean_CO2, group = sampling.point, color = sampling.point)) +
+        geom_line() +
+        geom_point() +
+        labs(x = "Hour of Day", y = "Mean CO2 Concentration", 
+             title = "Diel Variation in CO2 Concentration by Sampling Point") +
+        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        theme_minimal()
+
+ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color = sampling.point)) +
+        geom_line() +
+        geom_point() +
+        labs(x = "Hour of Day", y = "Mean CH4 Concentration", 
+             title = "Diel Variation in NH3 Concentration by Sampling Point") +
+        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        theme_minimal()
+
+ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color = sampling.point)) +
+        geom_line() +
+        geom_point() +
+        labs(x = "Hour of Day", y = "Mean NH3 Concentration", 
+             title = "Diel Variation in NH3 Concentration by Sampling Point") +
+        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        theme_minimal()
+
+
+
+########## Statistical tests ###########
+# Normailty 
+hist(GAS.long$CO2, main="Histogram of CO2")
+hist(GAS.long$CH4, main="Histogram of CH4")
+hist(GAS.long$NH3, main="Histogram of NH3")
+
+
+# Perform ANOVA 
+summary(aov(CO2 ~ sampling.point, data = GAS.long))
+
+summary(aov(CH4 ~ sampling.point, data = GAS.long))
+
+summary(aov(NH3 ~ sampling.point, data = GAS.long))
+
