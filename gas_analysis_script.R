@@ -8,6 +8,7 @@ library(ggplot2)
 library(dplyr)
 library(ggpubr)
 library(data.table)
+library(gganimate)
 
 
 ######## Import Gas Data #########
@@ -125,7 +126,8 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical)) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
-        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")   
+        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+        transition_states(sampling.point, transition_length = 2, state_length = 1)  
 
 
 # Plot CH4 standard error bar
@@ -195,7 +197,37 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color
         scale_x_continuous(breaks = seq(0, 23, by = 1)) +
         theme_minimal()
 
+######## Animating diel variations #############
+library(gganimate)
 
+CO2_plot <- ggplot(hourly_summary, aes(x = Hour, y = mean_CO2, group = sampling.point, color = sampling.point)) +
+        geom_line() +
+        labs(x = "Hour of Day", y = "Mean CO2 Concentration", 
+             title = "Diel Variation in CO2 Concentration by Sampling Point") +
+        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        theme_minimal() +
+        transition_states(sampling.point, transition_length = 2, state_length = 1)
+
+CH4_plot <- ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color = sampling.point)) +
+        geom_line() +
+        labs(x = "Hour of Day", y = "Mean CH4 Concentration", 
+             title = "Diel Variation in CH4 Concentration by Sampling Point") +
+        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        theme_minimal() +
+        transition_states(sampling.point, transition_length = 2, state_length = 1)
+
+NH3_plot <- ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color = sampling.point)) +
+        geom_line() +
+        labs(x = "Hour of Day", y = "Mean NH3 Concentration", 
+             title = "Diel Variation in NH3 Concentration by Sampling Point") +
+        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+        theme_minimal() +
+        transition_states(sampling.point, transition_length = 2, state_length = 1)
+
+# Animate the plot
+animate(CO2_plot, renderer = gifski_renderer())
+animate(CH4_plot, renderer = gifski_renderer())
+animate(NH3_plot, renderer = gifski_renderer())
 
 ########## Statistical tests ###########
 # Normailty 
