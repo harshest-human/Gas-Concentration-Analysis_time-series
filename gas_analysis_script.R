@@ -2,19 +2,12 @@ getwd()
 ######## Load library #########
 library(tidyverse)
 library(reshape2)
-library(hablar)
 library(lubridate)
 library(psych)
 library(ggplot2)
-library(readxl)
 library(dplyr)
 library(ggpubr)
-library(readr)
 library(data.table)
-library(viridis)
-library(gplots)
-library(RColorBrewer)
-
 
 
 ######## Import Gas Data #########
@@ -104,54 +97,62 @@ GAS.long[, Err_NH3 := ((NH3 - avg_NH3) / avg_NH3) * 100, by = sampling.point]
 GAS.long[, Err_H2O := ((H2O - avg_H2O) / avg_H2O) * 100, by = sampling.point]
 
 
-######## 0. Plotting errors using ggplot2 #########
-# Assign groups based on sampling point
-GAS.long[, vertical := ifelse(sampling.point %in% vertical_groups$top, "top",
-                              ifelse(sampling.point %in% vertical_groups$mid, "mid",
-                                     "bottom"))]
+# Ensure GAS.long is a data.table
+setDT(GAS.long)
 
 # Define the vertical_groups list
 vertical_groups <- list(
         top = c(1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 40, 43, 46, 49),
         mid = c(2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50),
-        bottom = c(3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51))
+        bottom = c(3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51)
+)
 
+# Assign groups based on sampling point
+GAS.long[, vertical := ifelse(sampling.point %in% vertical_groups$top, "top",
+                              ifelse(sampling.point %in% vertical_groups$mid, "mid",
+                                     "bottom"))]
 
 # Define colors for vertical groups
-point_fill <- c("top" = "orange2", "mid" = "green3", "bottom" = "blue")
+point_fill <- c("top" = "orange", "mid" = "green3", "bottom" = "steelblue1")
+
 
 # Plot CO2 standard error bar
 ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical)) +
-        geom_line(stat = "summary", fun = "mean", aes(group = 1), size = 1) +
-        geom_point(stat = "summary", fun = "mean", size = 2, shape = 21) +
+        geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration") +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        theme_minimal()
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        theme_minimal() + guides(fill = FALSE)  
+
 
 # Plot CH4 standard error bar
 ggplot(GAS.long, aes(x = sampling.point, y = Err_CH4, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
-        geom_point(stat = "summary", fun = "mean", size = 2, shape = 21) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CH4 Concentration") +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CH4 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        theme_minimal()
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        theme_minimal() + guides(fill = FALSE)  
 
 # Plot NH3 standard error bar
 ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
-        geom_point(stat = "summary", fun = "mean", size = 2, shape = 21) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of NH3 Concentration") +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of NH3 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        theme_minimal()
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        theme_minimal() + guides(fill = FALSE)  
 
 # Plot H2O standard error bar
 ggplot(GAS.long, aes(x = sampling.point, y = Err_H2O, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
-        geom_point(stat = "summary", fun = "mean", size = 2, shape = 21) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of H2O Concentration") +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of H2O % by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        theme_minimal()
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        theme_minimal() + guides(fill = FALSE)  
