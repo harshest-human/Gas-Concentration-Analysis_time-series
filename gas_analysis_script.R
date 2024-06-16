@@ -124,7 +124,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
+        labs(x = "Sampling Point", y = " CO2 Relative Error (%)") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red") 
@@ -135,7 +135,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CH4, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CH4 Concentration by Sampling Point") +
+        labs(x = "Sampling Point", y = " CH4 Relative Error (%)") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
@@ -145,7 +145,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of NH3 Concentration by Sampling Point") +
+        labs(x = "Sampling Point", y = "NH3 Relative Error (%)") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")    
@@ -155,10 +155,11 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_H2O, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of H2O % by Sampling Point") +
+        labs(x = "Sampling Point", y = "H2O Relative Error (%)") +
         scale_fill_manual(values = point_fill) +
         scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
+
 
 
 ######## Plotting diel variations #############
@@ -201,6 +202,7 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color
         theme_minimal()
         
 
+        
 ######## Animating diel variations #############
 library(gganimate)
 
@@ -245,6 +247,8 @@ animate(CO2_plot, renderer = gifski_renderer())
 animate(CH4_plot, renderer = gifski_renderer())
 animate(NH3_plot, renderer = gifski_renderer())
 
+
+
 ########## Statistical tests ###########
 # Normailty 
 hist(GAS.long$CO2, main="Histogram of CO2")
@@ -283,32 +287,34 @@ GAS.test.long <- data.table(
         NH3 = c(GAS.test$NH3.F2, GAS.test$NH3.P8),
         H2O = c(GAS.test$H2O.F2, GAS.test$H2O.P8))
 
-# Convert 'GAS.long' to data.table
-setDT(GAS.test.long)
+GAS.test.long <- GAS.test.long %>%
+        filter(DATE.TIME >= "2024-05-15 12:36:00" & DATE.TIME <= "2024-05-16 14:36:00") %>%
+        select(DATE.TIME, sampling.point, CO2, CH4, NH3, H2O)
 
-# write after arranging columns
-GAS.test.long <- GAS.test.long[, .(DATE.TIME, sampling.point, CO2, CH4, NH3, H2O)]
 
 # write the combined dataframe
 write.csv(GAS.test.long, "GAS.test.long.csv", row.names = FALSE)
 
 # Plot for CO2 with blue and red colors
 ggplot(GAS.test.long, aes(x = DATE.TIME, y = CO2, colour = as.factor(sampling.point))) +
-        geom_line() +
-        scale_colour_manual(values = c("blue", "red")) +  # Setting colors to blue and red
-        labs(colour = NULL)  # Removing legend title for color
+        geom_line(size = 1) +
+        scale_colour_manual(values = c("blue3", "green3")) +  # Setting colors to blue and red
+        labs(colour = NULL) + guides(colour = FALSE) +
+        theme_minimal()
 
 # Plot for CH4 with blue and red colors
 ggplot(GAS.test.long, aes(x = DATE.TIME, y = CH4, colour = as.factor(sampling.point))) +
-        geom_line() +
-        scale_colour_manual(values = c("blue", "red")) +  # Setting colors to blue and red
-        labs(colour = NULL)  # Removing legend title for color
+        geom_line(size = 1) +
+        scale_colour_manual(values = c("blue3", "green3")) +  # Setting colors to blue and red
+        labs(colour = NULL)  + guides(colour = FALSE) +
+        theme_minimal()
 
 # Plot for NH3 with blue and red colors
 ggplot(GAS.test.long, aes(x = DATE.TIME, y = NH3, colour = as.factor(sampling.point))) +
-        geom_line() +
-        scale_colour_manual(values = c("blue", "red")) +  # Setting colors to blue and red
-        labs(colour = NULL)  # Removing legend title for color
+        geom_line(size = 1) +
+        scale_colour_manual(values = c("blue3", "green3")) +  # Setting colors to blue and red
+        labs(colour = NULL)  + guides(colour = FALSE) +
+        theme_minimal()
 
 # Compute relative error
 GAS.error <- GAS.test %>%
