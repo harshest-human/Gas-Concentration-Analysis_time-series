@@ -254,11 +254,8 @@ summary(aov(CH4 ~ sampling.point, data = GAS.long))
 summary(aov(NH3 ~ sampling.point, data = GAS.long))
 
 
-
-
-
 ######## CRDS vs FTIR TEST #########
-######## Import Gas Data #########
+# Import Gas Data
 FTIR.test <- fread("D:/Data Analysis/GasmetCX4000_FTIR_Gas_Measurement/FTIR2_test.csv")
 CRDS.test <- fread("D:/Data Analysis/Picarro-G2508_CRDS_gas_measurement/CRDS.test.csv")
 
@@ -266,7 +263,6 @@ CRDS.test <- fread("D:/Data Analysis/Picarro-G2508_CRDS_gas_measurement/CRDS.tes
 FTIR.test$Messstelle.F2 <- factor(FTIR.test$Messstelle.F2, labels = "FTIR")
 CRDS.test$MPVPosition.P8 <- factor(CRDS.test$MPVPosition.P8, labels = "CRDS")
 
-######## Data combining ##########
 # convert into data.table
 data.table::setDT(FTIR.test)
 data.table::setDT(CRDS.test)
@@ -287,12 +283,41 @@ GAS.test.long <- data.table(
 setDT(GAS.test.long)
 
 # write after arranging columns
-GAS.test.long <- GAS.test.long[, .(DATE.TIME, ID, sampling.point, CO2, CH4, NH3, H2O)]
+GAS.test.long <- GAS.test.long[, .(DATE.TIME, sampling.point, CO2, CH4, NH3, H2O)]
 
 # write the combined dataframe
 write.csv(GAS.test.long, "GAS.test.long.csv", row.names = FALSE)
 
-ggplot(GAS.test.long, aes(x= DATE.TIME, y = CO2, colour = as.factor(sampling.point))) + geom_line()
-ggplot(GAS.test.long, aes(x= DATE.TIME, y = CH4, colour = as.factor(sampling.point))) + geom_line()
-ggplot(GAS.test.long, aes(x= DATE.TIME, y = NH3, colour = as.factor(sampling.point))) + geom_line()
+# Plot for CO2 with blue and red colors
+ggplot(GAS.test.long, aes(x = DATE.TIME, y = CO2, colour = as.factor(sampling.point))) +
+        geom_line() +
+        scale_colour_manual(values = c("blue", "red")) +  # Setting colors to blue and red
+        labs(colour = NULL)  # Removing legend title for color
+
+# Plot for CH4 with blue and red colors
+ggplot(GAS.test.long, aes(x = DATE.TIME, y = CH4, colour = as.factor(sampling.point))) +
+        geom_line() +
+        scale_colour_manual(values = c("blue", "red")) +  # Setting colors to blue and red
+        labs(colour = NULL)  # Removing legend title for color
+
+# Plot for NH3 with blue and red colors
+ggplot(GAS.test.long, aes(x = DATE.TIME, y = NH3, colour = as.factor(sampling.point))) +
+        geom_line() +
+        scale_colour_manual(values = c("blue", "red")) +  # Setting colors to blue and red
+        labs(colour = NULL)  # Removing legend title for color
+
+# Compute relative error
+GAS.error <- GAS.test %>%
+        mutate(Err_CO2 = (CO2.P8 - CO2.F2) / CO2.F2,
+               Err_CH4 = (CH4.P8 - CH4.F2) / CH4.F2,
+               Err_NH3 = (NH3.P8 - NH3.F2) / NH3.F2)
+
+ggplot(GAS.error, aes(x = DATE.TIME)) +
+        geom_line(aes(y = Err_CO2, color = "CO2")) +
+        geom_line(aes(y = Err_CH4, color = "CH4")) +
+        geom_line(aes(y = Err_NH3, color = "NH3")) +
+        scale_color_manual(name = "Errors", values = c("CO2" = "blue", "CH4" = "red", "NH3" = "green")) +
+        labs(x = "Time", y = "Error") +
+        theme_minimal()
+
 
