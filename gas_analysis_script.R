@@ -82,6 +82,7 @@ write.csv(GAS.long, "GAS.long.csv", row.names = FALSE)
 ####### Data Analysis ########
 GAS.long <- fread("GAS.long.csv")
 
+setDT(GAS.long)
 GAS.long <- GAS.long[sampling.point != 52]
 GAS.long$sampling.point <- as.factor(GAS.long$sampling.point)
 
@@ -125,9 +126,8 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical)) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
-        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-        transition_states(sampling.point, transition_length = 2, state_length = 1)  
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
+        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red") 
 
 
 # Plot CH4 standard error bar
@@ -137,7 +137,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CH4, fill = vertical)) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CH4 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
 
 # Plot NH3 standard error bar
@@ -147,7 +147,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of NH3 Concentration by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")    
 
 # Plot H2O standard error bar
@@ -157,7 +157,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_H2O, fill = vertical)) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
         labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of H2O % by Sampling Point") +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
 
 
@@ -200,6 +200,18 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color
 ######## Animating diel variations #############
 library(gganimate)
 
+# Trial Plot CO2 standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical, group = vertical)) +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2, aes(group = vertical)) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21, aes(group = vertical)) +
+        geom_line(stat = "summary", fun = "mean", aes(group = vertical)) +
+        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
+        scale_fill_manual(values = point_fill) +
+        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
+        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+        transition_states(sampling.point, transition_length = 2, state_length = 1)
+
+# Diel Variation plots
 CO2_plot <- ggplot(hourly_summary, aes(x = Hour, y = mean_CO2, group = sampling.point, color = sampling.point)) +
         geom_line() +
         labs(x = "Hour of Day", y = "Mean CO2 Concentration", 
