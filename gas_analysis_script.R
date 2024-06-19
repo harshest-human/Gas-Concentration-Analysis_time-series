@@ -126,7 +126,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical)) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
         labs(x = "Sampling Point", y = " CO2 Relative Error (%)") +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
+        scale_y_continuous(limits = c(-60, 60), breaks = seq(-60, 60, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red") 
 
 
@@ -137,7 +137,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_CH4, fill = vertical)) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
         labs(x = "Sampling Point", y = " CH4 Relative Error (%)") +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
+        scale_y_continuous(limits = c(-60, 60), breaks = seq(-60, 60, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
 
 # Plot NH3 standard error bar
@@ -147,18 +147,8 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
         labs(x = "Sampling Point", y = "NH3 Relative Error (%)") +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
+        scale_y_continuous(limits = c(-60, 60), breaks = seq(-60, 60, by = 10)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")    
-
-# Plot H2O standard error bar
-ggplot(GAS.long, aes(x = sampling.point, y = Err_H2O, fill = vertical)) +
-        geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
-        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
-        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = "H2O Relative Error (%)") +
-        scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 10)) +
-        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")     
 
 
 
@@ -180,7 +170,7 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_CO2, group = sampling.point, color
         labs(x = "Hour of Day", y = "Mean CO2 Concentration", 
              title = "Diel Variation in CO2 Concentration by Sampling Point") +
         scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        scale_y_continuous(limits = c(0, 1000), breaks = seq(0, 1000, by = 200))
+        scale_y_continuous(limits = c(0, 1000), breaks = seq(0, 1000, by = 200)) +
         theme_minimal()
 
 ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color = sampling.point)) +
@@ -189,7 +179,7 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color
         labs(x = "Hour of Day", y = "Mean CH4 Concentration", 
              title = "Diel Variation in NH3 Concentration by Sampling Point") +
         scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20))
+        scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20)) +
         theme_minimal()
 
 ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color = sampling.point)) +
@@ -198,7 +188,7 @@ ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color
         labs(x = "Hour of Day", y = "Mean NH3 Concentration", 
              title = "Diel Variation in NH3 Concentration by Sampling Point") +
         scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2))
+        scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2)) +
         theme_minimal()
         
 
