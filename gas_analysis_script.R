@@ -157,6 +157,15 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")    
 
 
+# Plot CO2 standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = ratio_NH3_CO2, fill = vertical)) +
+        geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        labs(x = "Sampling Point", y = expression(NH3/CO2~(10^-3~ppm~ppm^-1))) +
+        scale_fill_manual(values = point_fill) +
+        scale_y_continuous(limits = c(0, 5), breaks = seq(0, 5, by = 0.5)) +
+        theme_minimal() + guides(fill = FALSE) 
 
 ######## Plotting diel variations #############
 # Calculate Hour of Day
