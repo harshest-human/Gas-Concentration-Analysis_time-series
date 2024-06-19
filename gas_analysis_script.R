@@ -92,6 +92,12 @@ avg_CH4 <- GAS.long[, mean(CH4, na.rm = TRUE)]
 avg_NH3 <- GAS.long[, mean(NH3, na.rm = TRUE)]
 avg_H2O <- GAS.long[, mean(H2O, na.rm = TRUE)]
 
+# Calculate ratio
+GAS.long[, mean_NH3 := (mean(NH3)), by = sampling.point]
+GAS.long[, mean_CO2 := (mean(CO2)), by = sampling.point]
+GAS.long[, ratio_NH3_CO2 := (mean_NH3 / mean_CO2) * 10^3]
+
+
 # Calculate relative errors for each gas
 GAS.long[, Err_CO2 := ((CO2 - avg_CO2) / avg_CO2) * 100, by = sampling.point]
 GAS.long[, Err_CH4 := ((CH4 - avg_CH4) / avg_CH4) * 100, by = sampling.point]
@@ -311,6 +317,10 @@ GAS.error <- GAS.test %>%
         mutate(Err_CO2 = (CO2.P8 - CO2.F2) / CO2.F2,
                Err_CH4 = (CH4.P8 - CH4.F2) / CH4.F2,
                Err_NH3 = (NH3.P8 - NH3.F2) / NH3.F2)
+
+mean(GAS.error$Err_CO2)
+mean(GAS.error$Err_CH4)
+mean(GAS.error$Err_NH3)
 
 ggplot(GAS.error, aes(x = DATE.TIME)) +
         geom_line(aes(y = Err_CO2, color = "CO2")) +
