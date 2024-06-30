@@ -178,34 +178,20 @@ hourly_summary <- GAS.long %>%
                   mean_CH4 = mean(CH4),
                   mean_NH3 = mean(NH3))
 
-# Plot diel variation for CO2
-ggplot(hourly_summary, aes(x = Hour, y = mean_CO2, group = sampling.point, color = sampling.point)) +
-        geom_line() +
-        geom_point() +
-        labs(x = "Hour of Day", y = "Mean CO2 Concentration", 
-             title = "Diel Variation in CO2 Concentration by Sampling Point") +
-        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        scale_y_continuous(limits = c(0, 1000), breaks = seq(0, 1000, by = 200)) +
-        theme_minimal()
+# Reshape data into long format
+hourly_summary_long <- hourly_summary %>%
+        pivot_longer(cols = starts_with("mean_"), names_to = "Gas", values_to = "Mean_Concentration")
 
-ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color = sampling.point)) +
+# Plot diel variation for all gases with faceting
+ggplot(hourly_summary_long, aes(x = Hour, y = Mean_Concentration, group = sampling.point, color = sampling.point)) +
         geom_line() +
         geom_point() +
-        labs(x = "Hour of Day", y = "Mean CH4 Concentration", 
-             title = "Diel Variation in NH3 Concentration by Sampling Point") +
-        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20)) +
-        theme_minimal()
-
-ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color = sampling.point)) +
-        geom_line() +
-        geom_point() +
-        labs(x = "Hour of Day", y = "Mean NH3 Concentration", 
-             title = "Diel Variation in NH3 Concentration by Sampling Point") +
-        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2)) +
-        theme_minimal()
-        
+        labs(x = "Hour of Day", y = "Mean Concentration", 
+             title = "Diel Variation in Gas Concentrations by Sampling Point") +
+        scale_x_continuous(breaks = seq(0, 23, by = 1), labels = sprintf("%02d:00", seq(0, 23, by = 1))) +
+        facet_wrap(~Gas, scales = "free_y", ncol = 1, labeller = as_labeller(c(mean_CO2 = "CO2", mean_CH4 = "CH4", mean_NH3 = "NH3"))) +
+        theme_minimal() +
+        theme(legend.position = "none")
 
         
 ######## Animating diel variations #############
