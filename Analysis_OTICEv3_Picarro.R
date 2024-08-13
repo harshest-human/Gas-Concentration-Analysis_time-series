@@ -26,7 +26,8 @@ CRDS.data <- CRDS.data %>%
                 CO2 = mean(CO2, na.rm = TRUE),
                 CH4 = mean(CH4, na.rm = TRUE),
                 H2O = mean(H2O, na.rm = TRUE),
-                NH3 = mean(NH3, na.rm = TRUE))
+                NH3 = mean(NH3, na.rm = TRUE)) %>%
+        mutate(NH3 = NH3 / 1000)  # convert ppb to ppm
 
 
 OTICEv3.data <- fread("D:/Data Analysis/Gas_data/Clean_data/OTICE_clean/20240730_OTICEv3_data.csv")
@@ -38,14 +39,14 @@ OTICEv3.data$Node <- as.factor(OTICEv3.data$Node)
 # Create individual plots
 plot_OTICE <- ggline(OTICEv3.data, x = "DATE.TIME", y = "NH3",
                      add = "mean_se",
-                     title = "NH3 Levels by Node (OTICEv3)",
+                     title = "NH3 Levels measured (ECSense TB600B sensor; OTICEv3)",
                      xlab = "Time",
                      ylab = "NH3 Concentration",
                      color = "Node")
 
 plot_CRDS <- ggline(CRDS.data, x = "DATE.TIME", y = "NH3",
                     add = "mean_se",
-                    title = "NH3 Levels by Node (CRDS)",
+                    title = "NH3 Levels reference (Picarro CRDS G2509; Gas analyzer)",
                     xlab = "Time",
                     ylab = "NH3 Concentration",
                     color = "black")
