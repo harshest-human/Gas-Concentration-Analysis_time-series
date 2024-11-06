@@ -12,8 +12,8 @@ library(gganimate)
 
 
 ######## Import Gas Data #########
-FTIR.comb <- fread("2024_June_FTIR.comb.csv")
-CRDS.comb <- fread("2024_June_CRDS.comb.csv")
+FTIR.comb <- fread("2024_July_FTIR.comb.csv")
+CRDS.comb <- fread("2024_July_CRDS.comb.csv")
 
 
 ######## Data combining ##########
@@ -29,11 +29,11 @@ data.table::setDT(CRDS.comb)
 GAS.comb <- FTIR.comb[CRDS.comb, on = .(DATE.TIME), roll = "nearest"]
 
 # write the combined dataframe
-write.csv(GAS.comb, "GAS.comb.csv", row.names = FALSE)
+write.csv(GAS.comb, "2024_July_GAS.comb.csv", row.names = FALSE)
 
 ######## Data reshaping ##########
 # Import the final combined dataframe
-GAS.comb <- fread("2024_June_GAS.comb.csv")
+GAS.comb <- fread("2024_July_GAS.comb.csv")
 GAS.comb$DATE.TIME = as.POSIXct(GAS.comb$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
 
 # Convert GAS.comb to a data.table if it's not already
@@ -91,11 +91,11 @@ setDT(GAS.long)
 # write after arranging columns
 GAS.long <- GAS.long[, .(DATE.TIME, ID, sampling.point, CO2, CH4, NH3, H2O)]
 
-write.csv(GAS.long, "2024_June_GAS.long.csv", row.names = FALSE)
+write.csv(GAS.long, "2024_July_GAS.long.csv", row.names = FALSE)
 
 
 ####### Data Analysis ########
-GAS.long <- fread("2024_June_GAS.long.csv")
+GAS.long <- fread("2024_July_GAS.long.csv")
 
 count.52 <- GAS.long %>%
         group_by(sampling.point) %>%

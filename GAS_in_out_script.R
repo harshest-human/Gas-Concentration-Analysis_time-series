@@ -6,15 +6,17 @@ library(lubridate)
 library(psych)
 library(ggplot2)
 library(dplyr)
-library(ggpubr)
 library(data.table)
-library(gganimate)
 
 ########### Import combined dataframe of all four gas analysers ############
-GAS.long <- fread("2024_June_GAS.long.csv")
+GAS.long <- fread("2024_July_GAS.long.csv")
 
 ######### Calculate hourly averages for Emission values ##########
 GAS.long.DT <- GAS.long %>% arrange(DATE.TIME)
+
+count.52 <- GAS.long %>%
+        group_by(sampling.point) %>%
+        summarise(count = n())
 
 # Hourly average for sampling points inside
 GAS.long_in <- GAS.long %>% 
@@ -39,10 +41,10 @@ GAS.long_out <- GAS.long_out %>%
         mutate(hour = floor_date(DATE.TIME, unit = "hour")) %>%
         group_by(hour) %>%
         summarise(
-                CO2.in = mean(CO2, na.rm = TRUE),
-                CH4.in = mean(CH4, na.rm = TRUE),
-                NH3.in = mean(NH3, na.rm = TRUE),
-                H2O.in = mean(H2O, na.rm = TRUE),
+                CO2.out = mean(CO2, na.rm = TRUE),
+                CH4.out = mean(CH4, na.rm = TRUE),
+                NH3.out = mean(NH3, na.rm = TRUE),
+                H2O.out = mean(H2O, na.rm = TRUE),
                 .groups = "drop")
 
 # convert into data.table
@@ -53,4 +55,5 @@ data.table::setDT(GAS.long_out)
 GAS.in_out <- GAS.long_in[GAS.long_out, on = .(hour), roll = "nearest"]
 
 # write the combined dataframe
-write.csv(GAS.in_out, "2024_June_GAS.in_out.csv", row.names = FALSE)
+write.csv(GAS.in_out, "2024_July_GAS.in_out.csv", row.names = FALSE)
+
