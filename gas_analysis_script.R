@@ -12,8 +12,8 @@ library(gganimate)
 
 
 ######## Import Gas Data #########
-FTIR.comb <- fread("D:/Data Analysis/GasmetCX4000_FTIR_Gas_Measurement/FTIR.comb.csv")
-CRDS.comb <- fread("D:/Data Analysis/Picarro-G2508_CRDS_gas_measurement/CRDS.comb.csv")
+FTIR.comb <- fread("2024_June_FTIR.comb.csv")
+CRDS.comb <- fread("2024_June_CRDS.comb.csv")
 
 
 ######## Data combining ##########
@@ -31,11 +31,9 @@ GAS.comb <- FTIR.comb[CRDS.comb, on = .(DATE.TIME), roll = "nearest"]
 # write the combined dataframe
 write.csv(GAS.comb, "GAS.comb.csv", row.names = FALSE)
 
-
-
 ######## Data reshaping ##########
 # Import the final combined dataframe
-GAS.comb <- fread("D:/Data Analysis/Gas-Concentration-Analysis_time-series/GAS.comb.csv")
+GAS.comb <- fread("2024_June_GAS.comb.csv")
 GAS.comb$DATE.TIME = as.POSIXct(GAS.comb$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
 
 # Convert GAS.comb to a data.table if it's not already
@@ -51,6 +49,23 @@ GAS.comb <- GAS.comb[, .(DATE.TIME,
                          CO2.F2, NH3.F2, CH4.F2, H2O.F2,
                          CO2.P8, NH3.P8, CH4.P8, H2O.P8,
                          CO2.F1, NH3.F1, CH4.F1, H2O.F1)]
+
+# Count observations for each unique position 
+count.P8 <- GAS.comb %>%
+        group_by(MPVPosition.P8) %>%
+        summarise(count = n())
+
+count.P9 <- GAS.comb %>%
+        group_by(MPVPosition.P8) %>%
+        summarise(count = n())
+
+count.F1 <- GAS.comb %>%
+        group_by(Messstelle.F1) %>%
+        summarise(count = n())
+
+count.F2 <- GAS.comb %>%
+        group_by(Messstelle.F2) %>%
+        summarise(count = n())
 
 # Convert columns to factors with specified levels and labels
 GAS.comb$MPVPosition.P9 <- factor(GAS.comb$MPVPosition.P9, levels = 1:16, labels = 1:16)
@@ -76,14 +91,18 @@ setDT(GAS.long)
 # write after arranging columns
 GAS.long <- GAS.long[, .(DATE.TIME, ID, sampling.point, CO2, CH4, NH3, H2O)]
 
-write.csv(GAS.long, "GAS.long.csv", row.names = FALSE)
+write.csv(GAS.long, "2024_June_GAS.long.csv", row.names = FALSE)
 
 
 ####### Data Analysis ########
-GAS.long <- fread("GAS.long.csv")
+GAS.long <- fread("2024_June_GAS.long.csv")
+
+count.52 <- GAS.long %>%
+        group_by(sampling.point) %>%
+        summarise(count = n())
 
 setDT(GAS.long)
-GAS.long <- GAS.long[sampling.point != 52]
+#GAS.long <- GAS.long[sampling.point != 52]
 GAS.long$sampling.point <- as.factor(GAS.long$sampling.point)
 
 # Calculate average values for each gas
