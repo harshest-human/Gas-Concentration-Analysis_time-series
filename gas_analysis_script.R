@@ -12,8 +12,8 @@ library(gganimate)
 
 
 ######## Import Gas Data #########
-FTIR.comb <- fread("2024_July_FTIR.comb.csv")
-CRDS.comb <- fread("2024_July_CRDS.comb.csv")
+FTIR.comb <- fread("2024_Sep_Oct_FTIR.comb.csv")
+CRDS.comb <- fread("2024_Sep_Oct_CRDS.comb.csv")
 
 
 ######## Data combining ##########
@@ -26,14 +26,14 @@ data.table::setDT(FTIR.comb)
 data.table::setDT(CRDS.comb)
 
 # combine FTIR and CRDS
-GAS.comb <- FTIR.comb[CRDS.comb, on = .(DATE.TIME), roll = "nearest"]
+GAS.comb <- CRDS.comb[FTIR.comb, on = .(DATE.TIME), roll = "nearest"]
 
 # write the combined dataframe
-write.csv(GAS.comb, "2024_July_GAS.comb.csv", row.names = FALSE)
+write.csv(GAS.comb, "2024_Sep_Oct_GAS.comb.csv", row.names = FALSE)
 
 ######## Data reshaping ##########
 # Import the final combined dataframe
-GAS.comb <- fread("2024_July_GAS.comb.csv")
+GAS.comb <- fread("2024_Sep_Oct_GAS.comb.csv")
 GAS.comb$DATE.TIME = as.POSIXct(GAS.comb$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
 
 # Convert GAS.comb to a data.table if it's not already
@@ -56,7 +56,7 @@ count.P8 <- GAS.comb %>%
         summarise(count = n())
 
 count.P9 <- GAS.comb %>%
-        group_by(MPVPosition.P8) %>%
+        group_by(MPVPosition.P9) %>%
         summarise(count = n())
 
 count.F1 <- GAS.comb %>%
@@ -91,11 +91,11 @@ setDT(GAS.long)
 # write after arranging columns
 GAS.long <- GAS.long[, .(DATE.TIME, ID, sampling.point, CO2, CH4, NH3, H2O)]
 
-write.csv(GAS.long, "2024_July_GAS.long.csv", row.names = FALSE)
+write.csv(GAS.long, "2024_Sep_Oct_GAS.long.csv", row.names = FALSE)
 
 
 ####### Data Analysis ########
-GAS.long <- fread("2024_July_GAS.long.csv")
+GAS.long <- fread("2024_Sep_Oct_GAS.long.csv")
 
 count.52 <- GAS.long %>%
         group_by(sampling.point) %>%
