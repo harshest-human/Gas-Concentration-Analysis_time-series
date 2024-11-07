@@ -9,7 +9,7 @@ library(dplyr)
 library(data.table)
 
 ########### Import combined dataframe of all four gas analysers ############
-GAS.long <- fread("2024_July_GAS.long.csv")
+GAS.long <- fread("2024_Sep_Oct_GAS.long.csv")
 
 ######### Calculate hourly averages for Emission values ##########
 GAS.long.DT <- GAS.long %>% arrange(DATE.TIME)
@@ -18,8 +18,10 @@ count.52 <- GAS.long %>%
         group_by(sampling.point) %>%
         summarise(count = n())
 
+GAS.long.DT <- GAS.long %>% filter(sampling.point != 27) #removed 27th because the CRDS.P8 had error and hence no observation in Sep and October
+
 # Hourly average for sampling points inside
-GAS.long_in <- GAS.long %>% 
+GAS.long_in <- GAS.long.DT %>% 
         filter(sampling.point != 52)
 
 GAS.long_in <- GAS.long_in %>%
@@ -34,7 +36,7 @@ GAS.long_in <- GAS.long_in %>%
 
 
 # Hourly average for sampling points outside
-GAS.long_out <- GAS.long %>% 
+GAS.long_out <- GAS.long.DT %>% 
         filter(sampling.point == 52)
 
 GAS.long_out <- GAS.long_out %>%
@@ -55,5 +57,7 @@ data.table::setDT(GAS.long_out)
 GAS.in_out <- GAS.long_in[GAS.long_out, on = .(hour), roll = "nearest"]
 
 # write the combined dataframe
-write.csv(GAS.in_out, "2024_July_GAS.in_out.csv", row.names = FALSE)
+write.csv(GAS.in_out, "2024_Sep_Oct_GAS.in_out.csv", row.names = FALSE)
+
+
 
