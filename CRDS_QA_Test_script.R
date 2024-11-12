@@ -5,6 +5,7 @@ library(dplyr)
 library(tidyr)
 library(data.table)
 library(ggpubr)
+library(lubridate)
 
 # Load the data
 ########### Import combined dataframe of CRDS gas analysers ############
@@ -35,78 +36,48 @@ CRDS.long$DATE.TIME <- as.POSIXct(CRDS.long$DATE.TIME, format = "%Y-%m-%d %H:%M:
 ########### Import reshaped dataframe ############
 CRDS.long <- fread("2024_Nov_06_to_11_CRDS.long.csv")
 
+
+########### Data processing (hourly averages) ############
 CRDS.long$sampling.point = as.factor(CRDS.long$sampling.point)
 
-# Filter rows by 'DATE.TIME' range before merging
-start_date <- as.POSIXct("2024-11-07 13:00:00")  # Set start date
-end_date <- as.POSIXct("2024-11-07 15:00:00")  # Set end date
+CRDS.long$DATE.TIME <- as.POSIXct(CRDS.long$DATE.TIME, format="%Y-%m-%d %H:%M:%S")  
 
+# Extract the hour from the DATE.TIME column
+CRDS.long$Hour <- floor_date(CRDS.long$DATE.TIME, unit = "2 hours")
 
-CRDS.long <- CRDS.long[DATE.TIME >= start_date & DATE.TIME <= end_date]
+# Calculate the hourly average for each ID, sampling.point, and hour
+CRDS.long <- CRDS.long %>%
+        group_by(ID, sampling.point, Hour) %>%
+        summarise(
+                CO2 = mean(CO2, na.rm = TRUE),
+                CH4 = mean(CH4, na.rm = TRUE),
+                NH3 = mean(NH3, na.rm = TRUE),
+                H2O = mean(H2O, na.rm = TRUE))
 
-
-# Create the ggplot
-ggplot(CRDS.long, aes(x = DATE.TIME, y = CO2, color = ID, facet(sampling.point))) +
-        geom_line() + 
-        theme_minimal()
-
-
-# CalculGeomLine# Calculate average values for each gas
-#avg_CO2 <- CRDS.long[, mean(CO2, na.rm = TRUE)]
-#avg_CH4 <- CRDS.long[, mean(CH4, na.rm = TRUE)]
-#avg_NH3 <- CRDS.long[, mean(NH3, na.rm = TRUE)]
-#avg_H2O <- CRDS.long[, mean(H2O, na.rm = TRUE)]
-
-
-# Calculate relative errors for each gas
-#CRDS.long[, Err_CO2 := ((CO2 - avg_CO2) / avg_CO2) * 100, by = sampling.point]
-#CRDS.long[, Err_CH4 := ((CH4 - avg_CH4) / avg_CH4) * 100, by = sampling.point]
-#CRDS.long[, Err_NH3 := ((NH3 - avg_NH3) / avg_NH3) * 100, by = sampling.point]
-#CRDS.long[, Err_H2O := ((H2O - avg_H2O) / avg_H2O) * 100, by = sampling.point]
-
-
-# Calculate ratio
-#CRDS.long[, mean_NH3 := (mean(NH3)), by = sampling.point]
-#CRDS.long[, mean_CO2 := (mean(CO2)), by = sampling.point]
-#CRDS.long[, ratio_NH3_CO2 := (mean_NH3 / mean_CO2) * 10^3]
 
 ########### Data Visualization ggplot2 ############
-# Plot CO2 standard error bar
-#ggplot(CRDS.long, aes(x = DATE.TIME, y = Err_CO2, fill = sampling.point)) +
-        #geom_point(stat = "summary", fun = mean, size = 2, shape = 21) +
-        #geom_errorbar(stat = "summary", fun.data = "mean_se", width = 0.2) +
-        #theme_minimal() +
-        #guides(fill = FALSE)
+# Plotting CO2 trends with DATE.TIME on x-axis, faceted by sampling.point and colored by ID
+ggplot(CRDS.long, aes(x = Hour, y = CO2, color = ID)) + 
+        geom_line() +  
+        theme(legend.position = "bottom") 
 
-########### Data Visualization ggline::ggpubr #############
-# Ensure sampling.point is treated as a factor for discrete coloring and shaping
-#CRDS.long$sampling.point <- as.factor(CRDS.long$sampling.point)
+# Plotting CH4 trends with DATE.TIME on x-axis, faceted by sampling.point and colored by ID
+ggplot(CRDS.long, aes(x = Hour, y = CH4, color = ID)) + 
+        geom_line() +  
+        theme(legend.position = "bottom") 
 
-# Plot CO2 standard error bar using ggline
-ggline(CRDS.long, x = "DATE.TIME", y = "Err_CO2", 
-       add = "mean_se", 
-       color = "ID",    
-       palette = "jco",
-       point.size = 0.5) +
-        theme_minimal() +
-        guides(color = FALSE, shape = FALSE)
+# Plotting NH3 trends with DATE.TIME on x-axis, faceted by sampling.point and colored by ID
+ggplot(CRDS.long, aes(x = Hour, y = NH3, color = ID)) + 
+        geom_line() +  
+        theme(legend.position = "bottom") 
 
-ggline(CRDS.long, x = "DATE.TIME", y = "CH4", 
-       add = "mean_se", 
-       color = "ID", 
-       facet = "sampling.point",   
-       palette = "jco",
-       point.size = 0.5) +
-        theme_minimal() +
-        guides(color = FALSE, shape = FALSE)
 
-ggline(CRDS.long, x = "DATE.TIME", y = "NH3", 
-       add = "mean_se", 
-       color = "ID", 
-       facet = "sampling.point",   
-       palette = "jco",
-       point.size = 0.5) +
-        theme_minimal() +
-        guides(color = FALSE, shape = FALSE)
+
+
+
+
+
+
+
 
 
