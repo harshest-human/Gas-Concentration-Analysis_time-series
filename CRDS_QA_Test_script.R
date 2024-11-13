@@ -11,6 +11,27 @@ library(lubridate)
 ########### Import combined dataframe of CRDS gas analysers ############
 CRDS.comb <- fread("2024_Nov_06_to_11_CRDS.comb.csv")
 
+
+########### Calculating relative error between P8 and P9 ############
+CRDS.err <- CRDS.comb[MPVPosition.P8 == "1" & MPVPosition.P9 == "1" ]
+
+
+CRDS.err <- CRDS.err %>%
+        mutate(Err_CO2 = abs(CO2.P8 - CO2.P9) / (CO2.P8) * 100,
+               Err_CH4 = abs(CH4.P8 - CH4.P9) / (CH4.P8) * 100,
+               Err_NH3 = abs(NH3.P8 - NH3.P9) / (NH3.P8) * 100)
+
+mean(CRDS.err$Err_CO2)
+mean(CRDS.err$Err_CH4)
+mean(CRDS.err$Err_NH3)
+
+ggplot(CRDS.err, aes(x = DATE.TIME)) +
+        geom_line(aes(y = Err_CO2, color = "CO2")) +
+        geom_line(aes(y = Err_CH4, color = "CH4")) +
+        geom_line(aes(y = Err_NH3, color = "NH3")) +
+        scale_color_manual(name = "Errors", values = c("CO2" = "blue", "CH4" = "red", "NH3" = "green")) +
+        labs(x = "Time", y = "Error")
+
 # Reshape the data for ggplot
 CRDS.long <- data.table(
         DATE.TIME = CRDS.comb$DATE.TIME,
@@ -53,7 +74,7 @@ CRDS.long <- CRDS.long %>% group_by(ID, sampling.point, Hour) %>%
                 H2O = mean(H2O, na.rm = TRUE))
 
 
-########### Data Visualization ggplot2 ############
+########### Data Visualization ############
 CRDS.long$sampling.point = as.factor(CRDS.long$sampling.point)
 CRDS.long$ID = as.factor(CRDS.long$ID)
 
@@ -76,12 +97,6 @@ ggplot(CRDS.long, aes(x = Hour, y = NH3, color = ID)) +
         scale_x_datetime(date_breaks = "2 hour", date_labels = "%Y-%m-%d %H:%M") +  
         scale_color_manual(values = c("red", "blue")) +
         theme(legend.position = "bottom",axis.text.x = element_text(angle = 45, hjust = 1))
-
-
-
-
-
-
 
 
 
