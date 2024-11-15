@@ -12,8 +12,8 @@ library(gganimate)
 
 
 ######## Import Gas Data #########
-FTIR.comb <- fread("2024_Sep_Oct_FTIR.comb.csv")
-CRDS.comb <- fread("2024_Sep_Oct_CRDS.comb.csv")
+FTIR.comb <- fread("2024_June_FTIR.comb.csv")
+CRDS.comb <- fread("2024_June_CRDS.comb.csv")
 
 
 ######## Data combining ##########
@@ -26,14 +26,14 @@ data.table::setDT(FTIR.comb)
 data.table::setDT(CRDS.comb)
 
 # combine FTIR and CRDS
-GAS.comb <- CRDS.comb[FTIR.comb, on = .(DATE.TIME), roll = "nearest"]
+GAS.comb <- FTIR.comb[CRDS.comb, on = .(DATE.TIME), roll = "nearest"]
 
 # write the combined dataframe
-write.csv(GAS.comb, "2024_Sep_Oct_GAS.comb.csv", row.names = FALSE)
+write.csv(GAS.comb, "2024_June_GAS.comb.csv", row.names = FALSE)
 
 ######## Data reshaping ##########
 # Import the final combined dataframe
-GAS.comb <- fread("2024_Sep_Oct_GAS.comb.csv")
+GAS.comb <- fread("2024_June_GAS.comb.csv")
 GAS.comb$DATE.TIME = as.POSIXct(GAS.comb$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
 
 # Convert GAS.comb to a data.table if it's not already
@@ -78,44 +78,47 @@ GAS.comb$Messstelle.F1 <- factor(GAS.comb$Messstelle.F1, levels = 1:10, labels =
 GAS.long <- data.table(
         DATE.TIME = GAS.comb$DATE.TIME,
         ID = rep(c("MPVPosition.P9", "Messstelle.F2", "MPVPosition.P8", "Messstelle.F1"), each = nrow(GAS.comb)),
-        sampling.point = c(GAS.comb$MPVPosition.P9, rep(GAS.comb$Messstelle.F2, 1), GAS.comb$MPVPosition.P8, rep(GAS.comb$Messstelle.F1, 1)),
+        sampling.point = c(GAS.comb$MPVPosition.P9, GAS.comb$Messstelle.F2, GAS.comb$MPVPosition.P8, GAS.comb$Messstelle.F1),
         CO2 = c(GAS.comb$CO2.P9, GAS.comb$CO2.F2, GAS.comb$CO2.P8, GAS.comb$CO2.F1),
         CH4 = c(GAS.comb$CH4.P9, GAS.comb$CH4.F2, GAS.comb$CH4.P8, GAS.comb$CH4.F1),
         NH3 = c(GAS.comb$NH3.P9, GAS.comb$NH3.F2, GAS.comb$NH3.P8, GAS.comb$NH3.F1),
-        H2O = c(GAS.comb$H2O.P9, GAS.comb$H2O.F2, GAS.comb$H2O.P8, GAS.comb$H2O.F1)
-)
+        H2O = c(GAS.comb$H2O.P9, GAS.comb$H2O.F2, GAS.comb$H2O.P8, GAS.comb$H2O.F1))
 
 # Convert 'GAS.long' to data.table
 setDT(GAS.long)
 
 # write after arranging columns
 GAS.long <- GAS.long[, .(DATE.TIME, ID, sampling.point, CO2, CH4, NH3, H2O)]
+setorder(GAS.long, DATE.TIME)
 
-write.csv(GAS.long, "2024_Sep_Oct_GAS.long.csv", row.names = FALSE)
+write.csv(GAS.long, "2024_June_GAS.long.csv", row.names = FALSE)
 
 
 ####### Data Analysis ########
-GAS.long <- fread("2024_Sep_Oct_GAS.long.csv")
+GAS.long <- fread("2024_June_GAS.long.csv")
 
-count.52 <- GAS.long %>%
-        group_by(sampling.point) %>%
-        summarise(count = n())
+#count.52 <- GAS.long %>% group_by(sampling.point) %>% summarise(count = n())
 
 setDT(GAS.long)
 #GAS.long <- GAS.long[sampling.point != 52]
 GAS.long$sampling.point <- as.factor(GAS.long$sampling.point)
+
+
+# Calculate coefficient of variation (CV) at each sampling point
+GAS.long[, CV_CO2 := sd(CO2, na.rm = TRUE) / mean(CO2, na.rm = TRUE), by = sampling.point]
+GAS.long[, CV_CH4 := sd(CH4, na.rm = TRUE) / mean(CH4, na.rm = TRUE), by = sampling.point]
+GAS.long[, CV_NH3 := sd(NH3, na.rm = TRUE) / mean(NH3, na.rm = TRUE), by = sampling.point]
+GAS.long[, CV_H2O := sd(H2O, na.rm = TRUE) / mean(H2O, na.rm = TRUE), by = sampling.point]
+
+# Calculate ratio
+GAS.long[, ratio_NH3_CO2 := (NH3 / CO2) * 1000]
+
 
 # Calculate average values for each gas
 avg_CO2 <- GAS.long[, mean(CO2, na.rm = TRUE)]
 avg_CH4 <- GAS.long[, mean(CH4, na.rm = TRUE)]
 avg_NH3 <- GAS.long[, mean(NH3, na.rm = TRUE)]
 avg_H2O <- GAS.long[, mean(H2O, na.rm = TRUE)]
-
-# Calculate ratio
-GAS.long[, mean_NH3 := (mean(NH3)), by = sampling.point]
-GAS.long[, mean_CO2 := (mean(CO2)), by = sampling.point]
-GAS.long[, ratio_NH3_CO2 := (mean_NH3 / mean_CO2) * 10^3]
-
 
 # Calculate relative errors for each gas
 GAS.long[, Err_CO2 := ((CO2 - avg_CO2) / avg_CO2) * 100, by = sampling.point]
@@ -176,15 +179,34 @@ ggplot(GAS.long, aes(x = sampling.point, y = Err_NH3, fill = vertical)) +
         theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red")    
 
 
+######## Plotting coefficient of variation (CV) at each sampling point #############
 # Plot CO2 standard error bar
-ggplot(GAS.long, aes(x = sampling.point, y = ratio_NH3_CO2, fill = vertical)) +
+ggplot(GAS.long, aes(x = sampling.point, y = CV_CO2, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-        labs(x = "Sampling Point", y = expression(NH3/CO2~(10^-3~ppm~ppm^-1))) +
+        scale_y_continuous(limits = c(0.05, 1), breaks = seq(0, 1, by = 0.05)) +
         scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(0, 5), breaks = seq(0, 5, by = 0.5)) +
         theme_minimal() + guides(fill = FALSE) 
+
+# Plot CH4 standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = CV_CH4, fill = vertical)) +
+        geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        scale_y_continuous(limits = c(0.05, 1), breaks = seq(0, 1, by = 0.05)) +
+        scale_fill_manual(values = point_fill) +
+        theme_minimal() + guides(fill = FALSE) 
+
+# Plot NH3 standard error bar
+ggplot(GAS.long, aes(x = sampling.point, y = CV_NH3, fill = vertical)) +
+        geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
+        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
+        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        scale_y_continuous(limits = c(0.05, 1), breaks = seq(0, 1, by = 0.05)) +
+        scale_fill_manual(values = point_fill) +
+        theme_minimal() + guides(fill = FALSE) 
+
 
 ######## Plotting diel variations #############
 # Calculate Hour of Day
@@ -213,51 +235,6 @@ ggplot(hourly_summary_long, aes(x = Hour, y = Mean_Concentration, group = sampli
         theme(legend.position = "none")
 
         
-######## Animating diel variations #############
-library(gganimate)
-
-# Trial Plot CO2 standard error bar
-ggplot(GAS.long, aes(x = sampling.point, y = Err_CO2, fill = vertical, group = vertical)) +
-        geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2, aes(group = vertical)) +
-        geom_point(stat = "summary", fun = "mean", size = 3, shape = 21, aes(group = vertical)) +
-        geom_line(stat = "summary", fun = "mean", aes(group = vertical)) +
-        labs(x = "Sampling Point", y = "Relative Error (%)", title = "Relative Error of CO2 Concentration by Sampling Point") +
-        scale_fill_manual(values = point_fill) +
-        scale_y_continuous(limits = c(-100, 100), breaks = seq(-100, 100, by = 20)) +
-        theme_minimal() + guides(fill = FALSE) + geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-        transition_states(sampling.point, transition_length = 2, state_length = 1)
-
-# Diel Variation plots
-CO2_plot <- ggplot(hourly_summary, aes(x = Hour, y = mean_CO2, group = sampling.point, color = sampling.point)) +
-        geom_line() +
-        labs(x = "Hour of Day", y = "Mean CO2 Concentration", 
-             title = "Diel Variation in CO2 Concentration by Sampling Point") +
-        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        theme_minimal() +
-        transition_states(sampling.point, transition_length = 2, state_length = 1)
-
-CH4_plot <- ggplot(hourly_summary, aes(x = Hour, y = mean_CH4, group = sampling.point, color = sampling.point)) +
-        geom_line() +
-        labs(x = "Hour of Day", y = "Mean CH4 Concentration", 
-             title = "Diel Variation in CH4 Concentration by Sampling Point") +
-        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        theme_minimal() +
-        transition_states(sampling.point, transition_length = 2, state_length = 1)
-
-NH3_plot <- ggplot(hourly_summary, aes(x = Hour, y = mean_NH3, group = sampling.point, color = sampling.point)) +
-        geom_line() +
-        labs(x = "Hour of Day", y = "Mean NH3 Concentration", 
-             title = "Diel Variation in NH3 Concentration by Sampling Point") +
-        scale_x_continuous(breaks = seq(0, 23, by = 1)) +
-        theme_minimal() +
-        transition_states(sampling.point, transition_length = 2, state_length = 1)
-
-# Animate the plot
-animate(CO2_plot, renderer = gifski_renderer())
-animate(CH4_plot, renderer = gifski_renderer())
-animate(NH3_plot, renderer = gifski_renderer())
-
-
 
 ########## Statistical tests ###########
 # Normailty 
@@ -267,9 +244,14 @@ hist(GAS.long$NH3, main="Histogram of NH3")
 
 
 # Perform ANOVA 
-summary(aov(CO2 ~ sampling.point, data = GAS.long))
-summary(aov(CH4 ~ sampling.point, data = GAS.long))
-summary(aov(NH3 ~ sampling.point, data = GAS.long))
+summary(aov(CV_CO2 ~ sampling.point, data = GAS.long))
+summary(aov(CV_CH4 ~ sampling.point, data = GAS.long))
+summary(aov(CV_NH3 ~ sampling.point, data = GAS.long))
+
+# Perform Linear Regression
+summary(lm(CV_CO2 ~ sampling.point, data = GAS.long))
+summary(lm(CV_CH4 ~ sampling.point, data = GAS.long))
+summary(lm(CV_NH3 ~ sampling.point, data = GAS.long))
 
 
 ######## CRDS vs FTIR TEST #########
@@ -343,5 +325,7 @@ ggplot(GAS.error, aes(x = DATE.TIME)) +
         scale_color_manual(name = "Errors", values = c("CO2" = "blue", "CH4" = "red", "NH3" = "green")) +
         labs(x = "Time", y = "Error") +
         theme_minimal()
+
+
 
 
