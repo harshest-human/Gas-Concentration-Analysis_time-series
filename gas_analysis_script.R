@@ -15,7 +15,6 @@ library(gganimate)
 FTIR.comb <- fread("2024_June_FTIR.comb.csv")
 CRDS.comb <- fread("2024_June_CRDS.comb.csv")
 
-
 # convert into data.table
 data.table::setDT(FTIR.comb)
 data.table::setDT(CRDS.comb)
@@ -95,15 +94,15 @@ GAS.long <- fread("2024_June_GAS.long.csv")
 #count.52 <- GAS.long %>% group_by(sampling.point) %>% summarise(count = n())
 
 setDT(GAS.long)
-GAS.long <- GAS.long[sampling.point != 52]
+#GAS.long <- GAS.long[sampling.point != 52]
 GAS.long$sampling.point <- as.factor(GAS.long$sampling.point)
 
 
 # Calculate coefficient of variation (CV) at each sampling point
-GAS.long[, CV_CO2 := (sd(CO2, na.rm = TRUE) / mean(CO2, na.rm = TRUE)) / 51, by = sampling.point]
-GAS.long[, CV_CH4 := (sd(CH4, na.rm = TRUE) / mean(CH4, na.rm = TRUE)) / 51, by = sampling.point]
-GAS.long[, CV_NH3 := (sd(NH3, na.rm = TRUE) / mean(NH3, na.rm = TRUE)) / 51, by = sampling.point]
-GAS.long[, CV_H2O := (sd(H2O, na.rm = TRUE) / mean(H2O, na.rm = TRUE)) / 51, by = sampling.point]
+GAS.long[, CV_CO2 := sd(CO2, na.rm = TRUE) / mean(CO2, na.rm = TRUE), by = sampling.point]
+GAS.long[, CV_CH4 := sd(CH4, na.rm = TRUE) / mean(CH4, na.rm = TRUE), by = sampling.point]
+GAS.long[, CV_NH3 := sd(NH3, na.rm = TRUE) / mean(NH3, na.rm = TRUE), by = sampling.point]
+GAS.long[, CV_H2O := sd(H2O, na.rm = TRUE) / mean(H2O, na.rm = TRUE), by = sampling.point]
 
 # Calculate ratio
 GAS.long[, ratio_NH3_CO2 := (NH3 / CO2) * 1000]
