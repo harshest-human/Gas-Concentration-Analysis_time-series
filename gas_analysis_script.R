@@ -179,6 +179,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = CV_CO2, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        scale_y_continuous(limits = c(-0.01, 0.8), breaks = seq(0, 0.8, by = 0.05)) +
         scale_fill_manual(values = point_fill) +
         theme_minimal() + guides(fill = FALSE) 
 
@@ -187,6 +188,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = CV_CH4, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        scale_y_continuous(limits = c(-0.01, 0.8), breaks = seq(0, 0.8, by = 0.05)) +
         scale_fill_manual(values = point_fill) +
         theme_minimal() + guides(fill = FALSE) 
 
@@ -195,6 +197,7 @@ ggplot(GAS.long, aes(x = sampling.point, y = CV_NH3, fill = vertical)) +
         geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
         geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
         geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+        scale_y_continuous(limits = c(-0.01, 0.8), breaks = seq(0, 0.8, by = 0.05)) +
         scale_fill_manual(values = point_fill) +
         theme_minimal() + guides(fill = FALSE) 
 
@@ -226,6 +229,7 @@ ggplot(hourly_summary_long, aes(x = Hour, y = Mean_Concentration, group = sampli
         theme(legend.position = "none")
 
         
+
 
 ########## Statistical tests ###########
 # Normailty 
@@ -301,21 +305,14 @@ ggplot(GAS.test.long, aes(x = DATE.TIME, y = NH3, colour = as.factor(sampling.po
 
 # Compute relative error
 GAS.error <- GAS.test %>%
-        mutate(Err_CO2 = (CO2.P8 - CO2.F2) / CO2.F2,
-               Err_CH4 = (CH4.P8 - CH4.F2) / CH4.F2,
-               Err_NH3 = (NH3.P8 - NH3.F2) / NH3.F2)
+        mutate(Err_CO2 = ((CO2.P8 - CO2.F2) / CO2.F2)*100,
+               Err_CH4 = ((CH4.P8 - CH4.F2) / CH4.F2)*100,
+               Err_NH3 = ((NH3.P8 - NH3.F2) / NH3.F2)*100)
 
 mean(GAS.error$Err_CO2)
 mean(GAS.error$Err_CH4)
 mean(GAS.error$Err_NH3)
 
-ggplot(GAS.error, aes(x = DATE.TIME)) +
-        geom_line(aes(y = Err_CO2, color = "CO2")) +
-        geom_line(aes(y = Err_CH4, color = "CH4")) +
-        geom_line(aes(y = Err_NH3, color = "NH3")) +
-        scale_color_manual(name = "Errors", values = c("CO2" = "blue", "CH4" = "red", "NH3" = "green")) +
-        labs(x = "Time", y = "Error") +
-        theme_minimal()
 
 
 
