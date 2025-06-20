@@ -19,8 +19,14 @@ UB_CRDS <- read.csv("20250408-15_hourly_UB_CRDS.P8.csv")
 lab_combined <- bind_rows(ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS)
 
 ####### Data Visualization ##########
-ggplot(lab_combined, aes(x = DATE.TIME, y = CO2, color = lab)) +
-        geom_line() +
+lab_combined.1 <- lab_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-09 12:00:00")
+lab_combined.1 <- lab_combined %>% filter(analyzer != "FTIR.1")
+
+ggplot(lab_combined.1, aes(x = DATE.TIME, y = CO2, color = lab)) +
+        geom_point() +
         facet_wrap(~ location) +
         labs(title = "CO2 (ppmv) by Lab over Time", x = "Hour", y = "CO2 (ppmv)") +
         theme_minimal()
+
+
+
