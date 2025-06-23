@@ -25,7 +25,6 @@ lab_combined$DATE.TIME <- as.POSIXct(lab_combined$DATE.TIME)
 lab_combined <- lab_combined %>% select(DATE.TIME, location, lab.anaylzer, CO2, CH4, NH3)
 lab_combined <- lab_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-15 12:00:00")
 
-
 ####### Data Visualization Weekly ##########
 #CO2
 ggline(lab_combined,
@@ -119,6 +118,7 @@ ggline(lab_combined,
         scale_y_continuous(breaks = seq(0, 10000, by = 0.1)) +
         theme_light()
 
-
+#write csv
+write.csv(lab_combined, "20250408-15_Ringversuche_combined_data.csv", row.names = FALSE)
 
 
