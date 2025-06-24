@@ -4,7 +4,6 @@ library(tidyverse)
 library(reshape2)
 library(lubridate)
 library(psych)
-library(gganimate)
 library(ggplot2)
 library(dplyr)
 library(ggpubr)
@@ -98,7 +97,7 @@ result_emission_UB_CRDS <- result_emission_UB_CRDS %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
 
-# Repeat for all dataframes
+# Combine for all result dataframes
 final_emission_combined <- full_join(result_emission_LUFA_FTIR, result_emission_ANECO_FTIR, by = "DATE.TIME") %>%
         full_join(result_emission_MBBM_FTIR, by = "DATE.TIME") %>%
         full_join(result_emission_ATB_FTIR, by = "DATE.TIME") %>%
@@ -117,14 +116,19 @@ colSums(!is.na(final_emission_combined)) #Total measurement time period must be 
 
 # NH3 hourly emission trends across labs
 e_NH3_hour <- final_emission_combined %>% select(DATE.TIME, contains("emission_NH3_N")) %>%
-        select(-contains("_per_year"))
+        select(-contains("_per_year")) %>%
+        pivot_longer(-DATE.TIME, names_to = "lab", values_to = "emission")
 
-ggline(e_NH3_hour, x = "DATE.TIME", 
-       y = colnames(nh3_n_df)[-1],  # exclude DATE.TIME
-       add = "mean_se",
-       color = "variable",
-       palette = "jco",
-       legend.title = "Lab") +
-        labs(title = "NH₃_N Emissions (mean ± SE)", x = "Time", y = "Emission") +
-        theme_light()
+ggline(e_NH3_hour, x = "DATE.TIME", y = "emission", 
+       add = "mean_se", 
+       color = "lab") +
+        labs(title = "NH3 Emission Trends (mean ± SE) Background:North ",
+             x = "Time",
+             y = "NH3 Emission (g/h)",
+             color = "Laboratory") +
+        scale_x_datetime(date_breaks = "6 hours", date_labels = "%d.%m %H:%M")  +
+        scale_y_continuous(breaks = seq(-100, 10000, by = 10)) +
+        theme_light() +
+        theme(legend.position = "top") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, size =8))
 
