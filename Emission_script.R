@@ -4,9 +4,11 @@ library(tidyverse)
 library(reshape2)
 library(lubridate)
 library(psych)
+library(gganimate)
 library(ggplot2)
 library(dplyr)
 library(ggpubr)
+library(vtable)
 source("function_indirect.CO2.balance.method.R")
 
 ######## Import Data #########
@@ -47,6 +49,7 @@ emission_LUFA_CRDS  <- left_join(animal_temp, LUFA_CRDS_long,  by = "DATE.TIME")
 emission_UB_CRDS    <- left_join(animal_temp, UB_CRDS_long,    by = "DATE.TIME")
 
 
+########### Computation of ventilation rates and emissions #################
 # Calculate emissions using the function
 result_emission_LUFA_FTIR  <- indirect.CO2.balance.method(emission_LUFA_FTIR)
 result_emission_ANECO_FTIR <- indirect.CO2.balance.method(emission_ANECO_FTIR)
@@ -105,3 +108,15 @@ final_emission_combined <- full_join(result_emission_LUFA_FTIR, result_emission_
 
 write.csv(final_emission_combined,    "20250408-15_final_ringversuch_emission_results_combined.csv",    row.names = FALSE)
 
+
+########## Statistics and Data Visualization of emissions ############
+final_emission_combined <- final_emission_combined %>%
+        filter(DATE.TIME <= as.POSIXct("2025-04-15 00:00:00"))
+
+colSums(!is.na(final_emission_combined)) #Total measurement time period must be 6.5 days or 157 hours
+
+# Summary statistics
+sumtable(final_emission_combined, 
+         summ = c("mean", "sd", "median", "min", "max"),
+         group = FALSE, # no grouping; use TRUE to split by a factor
+         digits = 2)
