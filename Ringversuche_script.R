@@ -8,6 +8,8 @@ library(ggplot2)
 library(dplyr)
 library(ggpubr)
 library(scales)
+library(gridExtra)
+library(magick)
 
 ######## Import Gas Data #########
 #Load processed datasets
@@ -84,10 +86,6 @@ plot_CO2_conc_all
 plot_CH4_conc_all
 plot_NH3_conc_all
 
-# --- Save DATE.TIME plots ---
-ggsave("plot_CO2_conc_all.pdf", plot_CO2_conc_all, width = 10, height = 6)
-ggsave("plot_CH4_conc_all.pdf", plot_CH4_conc_all, width = 10, height = 6)
-ggsave("plot_NH3_conc_all.pdf", plot_NH3_conc_all, width = 10, height = 6)
 
 # --- Generate hour-based plots ---
 plot_CO2_conc_hour <- plot_concentration(lab_combined, x = "hour", y = "CO2")
@@ -99,7 +97,32 @@ plot_CO2_conc_hour
 plot_CH4_conc_hour
 plot_NH3_conc_hour
 
-# --- Save hour-based plots ---
-ggsave("plot_CO2_conc_hour.pdf", plot_CO2_conc_hour, width = 10, height = 6)
-ggsave("plot_CH4_conc_hour.pdf", plot_CH4_conc_hour, width = 10, height = 6)
-ggsave("plot_NH3_conc_hour.pdf", plot_NH3_conc_hour, width = 10, height = 6)
+
+# Define a named list of plots
+plots <- list(
+        plot_CO2_conc_all  = plot_CO2_conc_all,
+        plot_CH4_conc_all  = plot_CH4_conc_all,
+        plot_NH3_conc_all  = plot_NH3_conc_all,
+        plot_CO2_conc_hour = plot_CO2_conc_hour,
+        plot_CH4_conc_hour = plot_CH4_conc_hour,
+        plot_NH3_conc_hour = plot_NH3_conc_hour
+)
+
+
+# Save each plot as high-res PNG
+for (name in names(plots)) {
+        ggsave(
+                filename = paste0(name, ".png"),
+                plot = plots[[name]],
+                width = 14,
+                height = 8,
+                dpi = 600
+        )
+}
+
+# Combine PNGs into PDF using magick
+png_files <- paste0(names(plots), ".png")
+img_list <- magick::image_read(png_files)
+magick::image_write(image = img_list, path = "Ringversuche_concentration_plots.pdf", format = "pdf")
+
+
