@@ -114,21 +114,65 @@ final_emission_combined <- final_emission_combined %>%
 
 colSums(!is.na(final_emission_combined)) #Total measurement time period must be 6.5 days or 157 hours
 
-# NH3 hourly emission trends across labs
-e_NH3_hour <- final_emission_combined %>% select(DATE.TIME, contains("emission_NH3_N")) %>%
+
+# --- Combine NH3 emissions with background classification ---
+e_NH3 <- final_emission_combined %>%
+        select(DATE.TIME, contains("emission_NH3_")) %>%
         select(-contains("_per_year")) %>%
-        pivot_longer(-DATE.TIME, names_to = "lab", values_to = "emission")
+        pivot_longer(-DATE.TIME, names_to = "lab", values_to = "emission") %>%
+        mutate(
+                background = case_when(
+                        str_detect(lab, "_N_") ~ "North",
+                        str_detect(lab, "_S_") ~ "South",
+                        TRUE ~ "Unknown"
+                )
+        )
 
-ggline(e_NH3_hour, x = "DATE.TIME", y = "emission", 
-       add = "mean_se", 
-       color = "lab") +
-        labs(title = "NH3 Emission Trends (mean ± SE) Background:North ",
-             x = "Time",
-             y = "NH3 Emission (g/h)",
-             color = "Laboratory") +
-        scale_x_datetime(date_breaks = "6 hours", date_labels = "%d.%m %H:%M")  +
-        scale_y_continuous(breaks = seq(-100, 10000, by = 10)) +
-        theme_light() +
-        theme(legend.position = "top") +
-        theme(axis.text.x = element_text(angle = 45, hjust = 1, size =8))
+# --- Combine CH4 emissions with background classification ---
+e_CH4 <- final_emission_combined %>%
+        select(DATE.TIME, contains("emission_CH4_")) %>%
+        select(-contains("_per_year")) %>%
+        pivot_longer(-DATE.TIME, names_to = "lab", values_to = "emission") %>%
+        mutate(
+                background = case_when(
+                        str_detect(lab, "_N_") ~ "North",
+                        str_detect(lab, "_S_") ~ "South",
+                        TRUE ~ "Unknown"
+                )
+        )
 
+# --- Plotting function with 'background' ---
+plot_emission <- function(df, gas_label, background_filter) {
+        df %>%
+                filter(background == background_filter) %>%
+                ggline(x = "DATE.TIME", y = "emission",
+                       add = "mean_se",
+                       color = "lab") +
+                labs(title = paste(gas_label, "Emission Trends (mean ± SE) – Background:", background_filter),
+                     x = "Time",
+                     y = paste(gas_label, "Emission (g/h)"),
+                     color = "Laboratory") +
+                scale_x_datetime(date_breaks = "6 hours", date_labels = "%d.%m %H:%M") +
+                scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+                theme_light() +
+                theme(legend.position = "top",
+                        axis.text.x = element_text(angle = 45, hjust = 1))
+        }
+
+# --- Generate plots ---
+plot_NH3_north <- plot_emission(e_NH3, "NH3", "North")
+plot_NH3_south <- plot_emission(e_NH3, "NH3", "South")
+plot_CH4_north <- plot_emission(e_CH4, "CH4", "North")
+plot_CH4_south <- plot_emission(e_CH4, "CH4", "South")
+
+plot_NH3_north
+plot_NH3_south
+plot_CH4_north
+plot_CH4_south
+
+
+# --- Save plots as PDFs ---
+ggsave("NH3_emission_north.pdf", plot = plot_NH3_north, width = 10, height = 6)
+ggsave("NH3_emission_south.pdf", plot = plot_NH3_south, width = 10, height = 6)
+ggsave("CH4_emission_north.pdf", plot = plot_CH4_north, width = 10, height = 6)
+ggsave("CH4_emission_south.pdf", plot = plot_CH4_south, width = 10, height = 6)
