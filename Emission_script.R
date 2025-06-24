@@ -115,8 +115,16 @@ final_emission_combined <- final_emission_combined %>%
 
 colSums(!is.na(final_emission_combined)) #Total measurement time period must be 6.5 days or 157 hours
 
-# Summary statistics
-sumtable(final_emission_combined, 
-         summ = c("mean", "sd", "median", "min", "max"),
-         group = FALSE, # no grouping; use TRUE to split by a factor
-         digits = 2)
+# NH3 hourly emission trends across labs
+e_NH3_hour <- final_emission_combined %>% select(DATE.TIME, contains("emission_NH3_N")) %>%
+        select(-contains("_per_year"))
+
+ggline(e_NH3_hour, x = "DATE.TIME", 
+       y = colnames(nh3_n_df)[-1],  # exclude DATE.TIME
+       add = "mean_se",
+       color = "variable",
+       palette = "jco",
+       legend.title = "Lab") +
+        labs(title = "NH₃_N Emissions (mean ± SE)", x = "Time", y = "Emission") +
+        theme_light()
+
