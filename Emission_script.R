@@ -7,86 +7,95 @@ library(psych)
 library(ggplot2)
 library(dplyr)
 library(ggpubr)
-
-
-########### Create a new dataframe ############### 
-emission_data <- data.frame(
-        DATE.TIME = as.POSIXct(character()),   # datetime column
-        hour = integer(),                       # hour of the day
-        n_animals = integer(),                 # number of animals
-        m_weight = numeric(),               # mean weight in kg
-        p_pregnancy_day = numeric(),           # percentage in pregnancy days
-        Y1_milk_prod = numeric(),       # milk production (kg/day)
-        CO2_out = numeric(),                   # CO2 concentration outside
-        CO2_in = numeric(),                    # CO2 concentration inside
-        NH3_out = numeric(),                   # NH3 concentration outside
-        NH3_in = numeric(),                    # NH3 concentration inside
-        CH4_out = numeric(),                   # CH4 concentration outside
-        CH4_in = numeric(),                    # CH4 concentration inside
-        Temperature = numeric()                # temperature in °C
-        )
-
-# constants
-emission_data <- emission_data %>%
-        mutate(
-                P_CO2_term = 0.185,                      # CO2 per hpu (m³/h/hpu), from Pedersen 2008
-                a = 0.22,                       # amplitude coefficient
-                h_min = 2.9,                    # time of minimum activity
-                CO2_Molmass = 44.01,            # CO2 molar mass (g/mol)
-                NH3_Molmass = 17.031,           # NH3 molar mass (g/mol)
-                CH4_Molmass = 16.04,            # CH4 molar mass (g/mol)
-                R_gas_constant = 8.314472,                   # gas constant (J/mol·K)
-                p_pressure_ref = 1013                        # reference pressure (mbar)
-        )
-
-
-# Calculation of ventilation rate (Q) by indirect method
-emission_data <- emission_data %>%
-        mutate(
-                # Animal activity corrected by time
-                A_corr = 1 - a * 3 * sin((2 * pi / 24) * (hour + 6 - h_min)),
-                
-                # Heat production per animal (W)
-                Phi_tot = 5.6 * m_weight^(0.75) + 22 * Y1_milk_prod + 1.6e-5 * p_pregnancy_day^3,
-                
-                # Heat production corrected for temperature (W/animal)
-                Phi_T_corr = Phi_tot * (1 + 4e-5 * (20 - Temperature)^3),
-                
-                # hpu corrected for Temperature and Activity for all animals
-                hpu_T_A_corr_all_animal = ((Phi_T_corr / 1000) * A_corr) * n_animals,
-                
-                # Number of Livestock Units
-                n_LU = (n_animals * m_weight) / 500,
-                
-                # CO2 production (m³/h) corrected for T and A
-                P_CO2_T_A_all_animal = hpu_T_A_corr_all_animal * P_CO2_term,
-                
-                # Total ventilation rate (m³/h)
-                Q_Vent_rate = P_CO2_T_A_all_animal / ((CO2_in - CO2_out) * 1e-6),
-                
-                # NH3 concentration difference (mg/m³)
-                delta_NH3 = (0.1 * NH3_Molmass * p_pressure_ref * (NH3_in - NH3_out)) / ((Temperature + 273.15) * R_gas_constant),
-                
-                # NH3 emission (g/h per barn)
-                emission_NH3 = (delta_NH3 * Q_Vent_rate) / 1000,
-                
-                # NH3 emission (kg/year per barn)
-                emission_NH3_per_year = emission_NH3 * 24 * 365 / 1000,
-                
-                # CH4 concentration difference (mg/m³)
-                delta_CH4 = (0.1 * CH4_Molmass * p_pressure_ref * (CH4_in - CH4_out)) / ((Temperature + 273.15) * R_gas_constant),
-                
-                # CH4 emission (g/h per barn)
-                emission_CH4 = (delta_CH4 * Q_Vent_rate) / 1000,
-                
-                # CH4 emission (kg/year per barn)
-                emission_CH4_per_year = emission_CH4 * 24 * 365 / 1000
-        )
+source("function_indirect.CO2.balance.method.R")
 
 ######## Import Data #########
-#load gas concentration data
-lab_combined <- read.csv("20250408-15_Ringversuche_lab_combined_data.csv")
+#Load processed gas datasets
+LUFA_FTIR_long <- read.csv("20250408-15_long_LUFA_FTIR.csv")
+LUFA_FTIR_long$DATE.TIME <- as.POSIXct(LUFA_FTIR_long$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
+
+ANECO_FTIR_long <- read.csv("20250408-15_long_ANECO_FTIR.csv")
+ANECO_FTIR_long$DATE.TIME <- as.POSIXct(ANECO_FTIR_long$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
+
+MBBM_FTIR_long <- read.csv("20250408-15_long_MBBM_FTIR.csv")
+MBBM_FTIR_long$DATE.TIME <- as.POSIXct(MBBM_FTIR_long$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
+
+ATB_FTIR_long <- read.csv("20250408-15_long_ATB_FTIR.1.csv")
+ATB_FTIR_long$DATE.TIME <- as.POSIXct(ATB_FTIR_long$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
+
+ATB_CRDS_long <- read.csv("20250408-15_long_ATB_CRDS.P8.csv")
+ATB_CRDS_long$DATE.TIME <- as.POSIXct(ATB_CRDS_long$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
+
+LUFA_CRDS_long <- read.csv("20250408-15_long_LUFA_CRDS.P8.csv")
+LUFA_CRDS_long$DATE.TIME <- as.POSIXct(LUFA_CRDS_long$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
+
+UB_CRDS_long <- read.csv("20250408-15_long_UB_CRDS.P8.csv")
+UB_CRDS_long$DATE.TIME <- as.POSIXct(UB_CRDS_long$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
 
 #load animal and temperature data
-animal_temp_data <- read.csv("D:/Data Analysis/LVAT_Animal_Temperature_data/20250408-15_LVAT_Animal_Temperature_data.csv")
+animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
+animal_temp$DATE.TIME <- as.POSIXct(animal_temp$DATE.TIME, format = "%Y-%m-%d %H:%M:%S")
+
+
+# Join animal & temp data with gas datasets
+emission_LUFA_FTIR  <- left_join(animal_temp, LUFA_FTIR_long,  by = "DATE.TIME")
+emission_ANECO_FTIR <- left_join(animal_temp, ANECO_FTIR_long, by = "DATE.TIME")
+emission_MBBM_FTIR  <- left_join(animal_temp, MBBM_FTIR_long,  by = "DATE.TIME")
+emission_ATB_FTIR   <- left_join(animal_temp, ATB_FTIR_long,   by = "DATE.TIME")
+emission_ATB_CRDS   <- left_join(animal_temp, ATB_CRDS_long,   by = "DATE.TIME")
+emission_LUFA_CRDS  <- left_join(animal_temp, LUFA_CRDS_long,  by = "DATE.TIME")
+emission_UB_CRDS    <- left_join(animal_temp, UB_CRDS_long,    by = "DATE.TIME")
+
+
+# Calculate emissions using the function
+result_emission_LUFA_FTIR  <- indirect.CO2.balance.method(emission_LUFA_FTIR)
+result_emission_ANECO_FTIR <- indirect.CO2.balance.method(emission_ANECO_FTIR)
+result_emission_MBBM_FTIR  <- indirect.CO2.balance.method(emission_MBBM_FTIR)
+result_emission_ATB_FTIR   <- indirect.CO2.balance.method(emission_ATB_FTIR)
+result_emission_ATB_CRDS   <- indirect.CO2.balance.method(emission_ATB_CRDS)
+result_emission_LUFA_CRDS  <- indirect.CO2.balance.method(emission_LUFA_CRDS)
+result_emission_UB_CRDS    <- indirect.CO2.balance.method(emission_UB_CRDS)
+
+# Write emissions results to CSV
+write.csv(result_emission_LUFA_FTIR,  "result_emission_LUFA_FTIR.csv",  row.names = FALSE)
+write.csv(result_emission_ANECO_FTIR, "result_emission_ANECO_FTIR.csv", row.names = FALSE)
+write.csv(result_emission_MBBM_FTIR,  "result_emission_MBBM_FTIR.csv",  row.names = FALSE)
+write.csv(result_emission_ATB_FTIR,   "result_emission_ATB_FTIR.csv",   row.names = FALSE)
+write.csv(result_emission_ATB_CRDS,   "result_emission_ATB_CRDS.csv",   row.names = FALSE)
+write.csv(result_emission_LUFA_CRDS,  "result_emission_LUFA_CRDS.csv",  row.names = FALSE)
+write.csv(result_emission_UB_CRDS,    "result_emission_UB_CRDS.csv",    row.names = FALSE)
+
+# Extract NH3 and CH4 emission columns from each result
+final_LUFA_FTIR <- result_emission_LUFA_FTIR %>%
+        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+
+final_ANECO_FTIR <- result_emission_ANECO_FTIR %>%
+        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+
+final_MBBM_FTIR <- result_emission_MBBM_FTIR %>%
+        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+
+final_ATB_FTIR <- result_emission_ATB_FTIR %>%
+        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+
+final_ATB_CRDS <- result_emission_ATB_CRDS %>%
+        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+
+final_LUFA_CRDS <- result_emission_LUFA_CRDS %>%
+        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+
+final_UB_CRDS <- result_emission_UB_CRDS %>%
+        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+
+# Combine all into one final dataframe
+final_emission_ring_result <- final_LUFA_FTIR %>%
+        full_join(final_ANECO_FTIR, by = "DATE.TIME") %>%
+        full_join(final_MBBM_FTIR, by = "DATE.TIME") %>%
+        full_join(final_ATB_FTIR, by = "DATE.TIME") %>%
+        full_join(final_ATB_CRDS, by = "DATE.TIME") %>%
+        full_join(final_LUFA_CRDS, by = "DATE.TIME") %>%
+        full_join(final_UB_CRDS, by = "DATE.TIME")
+
+# (Optional) Write to CSV
+write.csv(final_emission_ring_result, "final_emission_ring_result.csv", row.names = FALSE)
 
