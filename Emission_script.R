@@ -7,7 +7,9 @@ library(psych)
 library(ggplot2)
 library(dplyr)
 library(ggpubr)
-library(vtable)
+library(scales)
+library(gridExtra)
+library(magick)
 source("function_indirect.CO2.balance.method.R")
 
 ######## Import Data #########
@@ -69,110 +71,170 @@ write.csv(result_emission_UB_CRDS,    "result_emission_UB_CRDS.csv",    row.name
 
 # Extract NH3 and CH4 emission columns from each result
 result_emission_LUFA_FTIR <- result_emission_LUFA_FTIR %>%
-        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
 result_emission_ANECO_FTIR <- result_emission_ANECO_FTIR %>%
-        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
 result_emission_MBBM_FTIR <- result_emission_MBBM_FTIR %>%
-        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
 result_emission_ATB_FTIR <- result_emission_ATB_FTIR %>%
-        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
 result_emission_ATB_CRDS <- result_emission_ATB_CRDS %>%
-        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
 result_emission_LUFA_CRDS <- result_emission_LUFA_CRDS %>%
-        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
 result_emission_UB_CRDS <- result_emission_UB_CRDS %>%
-        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
-
+########### Cleaned hourly emissions #################
 # Combine for all result dataframes
-final_emission_combined <- full_join(result_emission_LUFA_FTIR, result_emission_ANECO_FTIR, by = "DATE.TIME") %>%
-        full_join(result_emission_MBBM_FTIR, by = "DATE.TIME") %>%
-        full_join(result_emission_ATB_FTIR, by = "DATE.TIME") %>%
-        full_join(result_emission_ATB_CRDS, by = "DATE.TIME") %>%
-        full_join(result_emission_LUFA_CRDS, by = "DATE.TIME") %>%
-        full_join(result_emission_UB_CRDS, by = "DATE.TIME")
-
-write.csv(final_emission_combined,    "20250408-15_final_ringversuch_emission_results_combined.csv",    row.names = FALSE)
-
-
-########## Statistics and Data Visualization of emissions ############
-final_emission_combined <- final_emission_combined %>%
-        filter(DATE.TIME <= as.POSIXct("2025-04-15 00:00:00"))
-
-colSums(!is.na(final_emission_combined)) #Total measurement time period must be 6.5 days or 157 hours
-
-
-# --- Combine NH3 emissions with background classification ---
-e_NH3 <- final_emission_combined %>%
-        select(DATE.TIME, contains("emission_NH3_")) %>%
-        select(-contains("_per_year")) %>%
-        pivot_longer(-DATE.TIME, names_to = "lab", values_to = "emission") %>%
-        mutate(
-                background = case_when(
-                        str_detect(lab, "_N_") ~ "North",
-                        str_detect(lab, "_S_") ~ "South",
-                        TRUE ~ "Unknown"
-                )
-        )
-
-# --- Combine CH4 emissions with background classification ---
 e_CH4 <- final_emission_combined %>%
-        select(DATE.TIME, contains("emission_CH4_")) %>%
+        select(DATE.TIME, contains("e_CH4_")) %>%
         select(-contains("_per_year")) %>%
-        pivot_longer(-DATE.TIME, names_to = "lab", values_to = "emission") %>%
-        mutate(
-                background = case_when(
+        pivot_longer(
+                cols = -DATE.TIME,
+                names_to = "lab",
+                values_to = "e_CH4"
+        ) %>%
+        mutate(bg_direction = case_when(
                         str_detect(lab, "_N_") ~ "North",
                         str_detect(lab, "_S_") ~ "South",
                         TRUE ~ "Unknown"
-                )
+                ),
+                lab.analyzer = case_when(
+                        str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
+                        str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
+                        str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
+                        str_detect(lab, "MBM_FTIR") ~ "MBBM_FTIR",
+                        str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
+                        str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
+                        str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
+                        TRUE ~ "Unknown"
+                ),
+                hour = as.factor(hour(DATE.TIME))
         )
+
+e_CH4 <- e_CH4 %>% select(-lab)
+        
+e_NH3 <- final_emission_combined %>%
+        select(DATE.TIME, contains("e_NH3_")) %>%
+        select(-contains("_per_year")) %>%
+        pivot_longer(
+                cols = -DATE.TIME,
+                names_to = "lab",
+                values_to = "e_NH3"
+        ) %>%
+        mutate(bg_direction = case_when(
+                str_detect(lab, "_N_") ~ "North",
+                str_detect(lab, "_S_") ~ "South",
+                TRUE ~ "Unknown"
+        ),
+        lab.analyzer = case_when(
+                str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
+                str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
+                str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
+                str_detect(lab, "MBM_FTIR") ~ "MBBM_FTIR",
+                str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
+                str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
+                str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
+                TRUE ~ "Unknown"
+        ),
+        hour = as.factor(hour(DATE.TIME))
+        )
+
+e_NH3 <- e_NH3 %>% select(-lab)
 
 # --- Plotting function with 'background' ---
-plot_emission <- function(df, gas_label, background_filter) {
-        df %>%
-                filter(background == background_filter) %>%
-                ggline(x = "DATE.TIME", y = "emission",
-                       add = "mean_se",
-                       color = "lab") +
-                labs(title = paste(gas_label, "Emission Trends (mean ± SE) – Background:", background_filter),
-                     x = "Time",
-                     y = paste(gas_label, "Emission (g/h)"),
+plot_emission <- function(df, x, y, bg_direction) {
+        library(dplyr)
+        library(ggpubr)
+        library(ggplot2)
+        library(scales)
+        
+        df_filtered <- df %>%
+                filter(bg_direction == bg_direction)
+        
+        p <- ggline(df_filtered, x = x, y = y,
+                    add = "mean_se",
+                    color = "lab.analyzer") +
+                labs(title = paste(y, "Emission Trends (mean ± SE) – Background:", bg_direction),
+                     x = x,
+                     y = paste(y, "Emission (g/h)"),
                      color = "Laboratory") +
-                scale_x_datetime(date_breaks = "6 hours", date_labels = "%d.%m %H:%M") +
                 scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
                 theme_light() +
-                theme(legend.position = "top",
-                        axis.text.x = element_text(angle = 45, hjust = 1))
+                theme(legend.position = "top")
+        
+        # If x is datetime, add scale_x_datetime and rotate labels
+        if (inherits(df[[x]], "POSIXct") || inherits(df[[x]], "POSIXt")) {
+                p <- p +
+                        scale_x_datetime(date_breaks = "6 hours", date_labels = "%d.%m %H:%M") +
+                        theme(axis.text.x = element_text(angle = 45, hjust = 1))
         }
+        
+        return(p)
+}
 
-# --- Generate plots ---
-plot_NH3_north <- plot_emission(e_NH3, "NH3", "North")
-plot_NH3_south <- plot_emission(e_NH3, "NH3", "South")
-plot_CH4_north <- plot_emission(e_CH4, "CH4", "North")
-plot_CH4_south <- plot_emission(e_CH4, "CH4", "South")
 
+
+# --- Generate DATE.TIME plots ---
+plot_NH3_north <- plot_emission(e_NH3, x = "DATE.TIME", y = "e_NH3", bg_direction = "North")
+plot_NH3_south <- plot_emission(e_NH3, x = "DATE.TIME", y = "e_NH3", bg_direction = "South")
+plot_CH4_north <- plot_emission(e_CH4, x = "DATE.TIME", y = "e_CH4", bg_direction = "North")
+plot_CH4_south <- plot_emission(e_CH4, x = "DATE.TIME", y = "e_CH4", bg_direction = "South")
+
+# --- View DATE.TIME plots ---
 plot_NH3_north
 plot_NH3_south
 plot_CH4_north
 plot_CH4_south
 
 
-# --- Save plots as PDFs ---
-ggsave("NH3_emission_north.pdf", plot = plot_NH3_north, width = 10, height = 6)
-ggsave("NH3_emission_south.pdf", plot = plot_NH3_south, width = 10, height = 6)
-ggsave("CH4_emission_north.pdf", plot = plot_CH4_north, width = 10, height = 6)
-ggsave("CH4_emission_south.pdf", plot = plot_CH4_south, width = 10, height = 6)
+# --- Generate hour-based plots ---
+plot_NH3_north_hour <- plot_emission(e_NH3, x = "hour", y = "e_NH3", bg_direction = "North")
+plot_NH3_south_hour <- plot_emission(e_NH3, x = "hour", y = "e_NH3", bg_direction = "South")
+plot_CH4_north_hour <- plot_emission(e_CH4, x = "hour", y = "e_CH4", bg_direction = "North")
+plot_CH4_south_hour <- plot_emission(e_CH4, x = "hour", y = "e_CH4", bg_direction = "South")
+
+# --- View hour-based plots ---
+plot_NH3_north_hour
+plot_NH3_south_hour
+plot_CH4_north_hour
+plot_CH4_south_hour
+
+# Define named list of emission plots
+emission_plots <- list(
+        plot_NH3_north = plot_NH3_north,
+        plot_NH3_south = plot_NH3_south,
+        plot_CH4_north_hour = plot_CH4_north_hour,
+        plot_CH4_south_hour = plot_CH4_south_hour
+)
+
+# Save each emission plot as high-res PNG
+for (name in names(emission_plots)) {
+        ggsave(
+                filename = paste0(name, ".png"),
+                plot = emission_plots[[name]],
+                width = 14,
+                height = 8,
+                dpi = 600
+        )
+}
+
+# Read the emission PNGs and combine into a single PDF
+png_files <- paste0(names(emission_plots), ".png")
+img_list <- magick::image_read(png_files)
+magick::image_write(image = img_list, path = "Ringversuche_emission_plots.pdf", format = "pdf")
+
