@@ -8,11 +8,8 @@ library(ggplot2)
 library(dplyr)
 library(ggpubr)
 
-######## Import Gas Data #########
-#load gas concentration data
-lab_combined <- read.csv("20250408-15_Ringversuche_lab_combined_data.csv")
 
-#create a new dataframe 
+########### Create a new dataframe ############### 
 emission_data <- data.frame(
         DATE.TIME = as.POSIXct(character()),   # datetime column
         hour = integer(),                       # hour of the day
@@ -86,4 +83,10 @@ emission_data <- emission_data %>%
                 emission_CH4_per_year = emission_CH4 * 24 * 365 / 1000
         )
 
+######## Import Data #########
+#load gas concentration data
+lab_combined <- read.csv("20250408-15_Ringversuche_lab_combined_data.csv")
+
+#load animal and temperature data
+animal_temp_data <- read.csv("D:/Data Analysis/LVAT_Animal_Temperature_data/20250408-15_LVAT_Animal_Temperature_data.csv")
 
