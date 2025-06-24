@@ -38,12 +38,12 @@ emission_data <- emission_data %>%
                 CO2_Molmass = 44.01,            # CO2 molar mass (g/mol)
                 NH3_Molmass = 17.031,           # NH3 molar mass (g/mol)
                 CH4_Molmass = 16.04,            # CH4 molar mass (g/mol)
-                R = 8.314472,                   # gas constant (J/mol·K)
-                p = 1013                        # reference pressure (mbar)
+                R_gas_constant = 8.314472,                   # gas constant (J/mol·K)
+                p_pressure_ref = 1013                        # reference pressure (mbar)
         )
 
 
-# Calculation of ventilation rate (Q) by indirect method)
+# Calculation of ventilation rate (Q) by indirect method
 emission_data <- emission_data %>%
         mutate(
                 # Animal activity corrected by time
@@ -65,7 +65,25 @@ emission_data <- emission_data %>%
                 P_CO2_T_A_all_animal = hpu_T_A_corr_all_animal * P_CO2_term,
                 
                 # Total ventilation rate (m³/h)
-                Q_Vent_rate = P_CO2_T_A_all_animal / ((CO2_in - CO2_out) * 1e-6)
+                Q_Vent_rate = P_CO2_T_A_all_animal / ((CO2_in - CO2_out) * 1e-6),
+                
+                # NH3 concentration difference (mg/m³)
+                delta_NH3 = (0.1 * NH3_Molmass * p_pressure_ref * (NH3_in - NH3_out)) / ((Temperature + 273.15) * R_gas_constant),
+                
+                # NH3 emission (g/h per barn)
+                emission_NH3 = (delta_NH3 * Q_Vent_rate) / 1000,
+                
+                # NH3 emission (kg/year per barn)
+                emission_NH3_per_year = emission_NH3 * 24 * 365 / 1000,
+                
+                # CH4 concentration difference (mg/m³)
+                delta_CH4 = (0.1 * CH4_Molmass * p_pressure_ref * (CH4_in - CH4_out)) / ((Temperature + 273.15) * R_gas_constant),
+                
+                # CH4 emission (g/h per barn)
+                emission_CH4 = (delta_CH4 * Q_Vent_rate) / 1000,
+                
+                # CH4 emission (kg/year per barn)
+                emission_CH4_per_year = emission_CH4 * 24 * 365 / 1000
         )
 
 
