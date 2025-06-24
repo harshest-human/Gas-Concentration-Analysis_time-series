@@ -64,19 +64,19 @@ indirect.CO2.balance.method  <- function(df) {
                 ) %>%
                 mutate(
                         # NH3 emissions with NH3 lab suffix
-                        !!paste0("emission_NH3_N_", nh3_lab_suffix, "_", analyzer_suffix) := (delta_NH3_N * Q_Vent_rate_N) / 1000,
-                        !!paste0("emission_NH3_S_", nh3_lab_suffix, "_", analyzer_suffix) := (delta_NH3_S * Q_Vent_rate_S) / 1000,
-                        !!paste0("emission_NH3_N_", nh3_lab_suffix, "_", analyzer_suffix, "_per_year") := 
-                                (!!sym(paste0("emission_NH3_N_", nh3_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000,
-                        !!paste0("emission_NH3_S_", nh3_lab_suffix, "_", analyzer_suffix, "_per_year") := 
-                                (!!sym(paste0("emission_NH3_S_", nh3_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000,
+                        !!paste0("e_NH3_N_", nh3_lab_suffix, "_", analyzer_suffix) := (delta_NH3_N * Q_Vent_rate_N) / 1000,
+                        !!paste0("e_NH3_S_", nh3_lab_suffix, "_", analyzer_suffix) := (delta_NH3_S * Q_Vent_rate_S) / 1000,
+                        !!paste0("e_NH3_N_", nh3_lab_suffix, "_", analyzer_suffix, "_per_year") := 
+                                (!!sym(paste0("e_NH3_N_", nh3_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000,
+                        !!paste0("e_NH3_S_", nh3_lab_suffix, "_", analyzer_suffix, "_per_year") := 
+                                (!!sym(paste0("e_NH3_S_", nh3_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000,
                         
                         # CH4 emissions with CH4 lab suffix
-                        !!paste0("emission_CH4_N_", ch4_lab_suffix, "_", analyzer_suffix) := (delta_CH4_N * Q_Vent_rate_N) / 1000,
-                        !!paste0("emission_CH4_S_", ch4_lab_suffix, "_", analyzer_suffix) := (delta_CH4_S * Q_Vent_rate_S) / 1000,
-                        !!paste0("emission_CH4_N_", ch4_lab_suffix, "_", analyzer_suffix, "_per_year") := 
-                                (!!sym(paste0("emission_CH4_N_", ch4_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000,
-                        !!paste0("emission_CH4_S_", ch4_lab_suffix, "_", analyzer_suffix, "_per_year") := 
-                                (!!sym(paste0("emission_CH4_S_", ch4_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000
+                        !!paste0("e_CH4_N_", ch4_lab_suffix, "_", analyzer_suffix) := (delta_CH4_N * Q_Vent_rate_N) / 1000,
+                        !!paste0("e_CH4_S_", ch4_lab_suffix, "_", analyzer_suffix) := (delta_CH4_S * Q_Vent_rate_S) / 1000,
+                        !!paste0("e_CH4_N_", ch4_lab_suffix, "_", analyzer_suffix, "_per_year") := 
+                                (!!sym(paste0("e_CH4_N_", ch4_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000,
+                        !!paste0("e_CH4_S_", ch4_lab_suffix, "_", analyzer_suffix, "_per_year") := 
+                                (!!sym(paste0("e_CH4_S_", ch4_lab_suffix, "_", analyzer_suffix))) * 24 * 365 / 1000
                 )
 }
