@@ -98,7 +98,7 @@ plot_CH4_conc_hour
 plot_NH3_conc_hour
 
 
-# Define a named list of plots
+# Define a named list of concentration plots
 plots <- list(
         plot_CO2_conc_all  = plot_CO2_conc_all,
         plot_CH4_conc_all  = plot_CH4_conc_all,
