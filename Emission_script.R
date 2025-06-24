@@ -66,36 +66,42 @@ write.csv(result_emission_LUFA_CRDS,  "result_emission_LUFA_CRDS.csv",  row.name
 write.csv(result_emission_UB_CRDS,    "result_emission_UB_CRDS.csv",    row.names = FALSE)
 
 # Extract NH3 and CH4 emission columns from each result
-final_LUFA_FTIR <- result_emission_LUFA_FTIR %>%
-        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+result_emission_LUFA_FTIR <- result_emission_LUFA_FTIR %>%
+        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        distinct(DATE.TIME, .keep_all = TRUE)
 
-final_ANECO_FTIR <- result_emission_ANECO_FTIR %>%
-        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+result_emission_ANECO_FTIR <- result_emission_ANECO_FTIR %>%
+        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        distinct(DATE.TIME, .keep_all = TRUE)
 
-final_MBBM_FTIR <- result_emission_MBBM_FTIR %>%
-        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+result_emission_MBBM_FTIR <- result_emission_MBBM_FTIR %>%
+        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        distinct(DATE.TIME, .keep_all = TRUE)
 
-final_ATB_FTIR <- result_emission_ATB_FTIR %>%
-        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+result_emission_ATB_FTIR <- result_emission_ATB_FTIR %>%
+        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        distinct(DATE.TIME, .keep_all = TRUE)
 
-final_ATB_CRDS <- result_emission_ATB_CRDS %>%
-        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+result_emission_ATB_CRDS <- result_emission_ATB_CRDS %>%
+        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        distinct(DATE.TIME, .keep_all = TRUE)
 
-final_LUFA_CRDS <- result_emission_LUFA_CRDS %>%
-        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+result_emission_LUFA_CRDS <- result_emission_LUFA_CRDS %>%
+        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        distinct(DATE.TIME, .keep_all = TRUE)
 
-final_UB_CRDS <- result_emission_UB_CRDS %>%
-        select(DATE.TIME, matches("^emission_(NH3|CH4)"))
+result_emission_UB_CRDS <- result_emission_UB_CRDS %>%
+        select(DATE.TIME, matches("^emission_NH3"), matches("^emission_CH4")) %>%
+        distinct(DATE.TIME, .keep_all = TRUE)
 
-# Combine all into one final dataframe
-final_emission_ring_result <- final_LUFA_FTIR %>%
-        full_join(final_ANECO_FTIR, by = "DATE.TIME") %>%
-        full_join(final_MBBM_FTIR, by = "DATE.TIME") %>%
-        full_join(final_ATB_FTIR, by = "DATE.TIME") %>%
-        full_join(final_ATB_CRDS, by = "DATE.TIME") %>%
-        full_join(final_LUFA_CRDS, by = "DATE.TIME") %>%
-        full_join(final_UB_CRDS, by = "DATE.TIME")
 
-# (Optional) Write to CSV
-write.csv(final_emission_ring_result, "final_emission_ring_result.csv", row.names = FALSE)
+# Repeat for all dataframes
+final_emission_combined <- full_join(result_emission_LUFA_FTIR, result_emission_ANECO_FTIR, by = "DATE.TIME") %>%
+        full_join(result_emission_MBBM_FTIR, by = "DATE.TIME") %>%
+        full_join(result_emission_ATB_FTIR, by = "DATE.TIME") %>%
+        full_join(result_emission_ATB_CRDS, by = "DATE.TIME") %>%
+        full_join(result_emission_LUFA_CRDS, by = "DATE.TIME") %>%
+        full_join(result_emission_UB_CRDS, by = "DATE.TIME")
+
+write.csv(final_emission_combined,    "20250408-15_final_ringversuch_emission_results_combined.csv",    row.names = FALSE)
 
