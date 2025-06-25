@@ -10,6 +10,7 @@ library(ggpubr)
 library(scales)
 library(gridExtra)
 library(magick)
+library(summarytools)
 source("function_indirect.CO2.balance.method.R")
 
 ######## Import Data #########
@@ -98,6 +99,16 @@ result_emission_UB_CRDS <- result_emission_UB_CRDS %>%
         select(DATE.TIME, matches("^e_NH3"), matches("^e_CH4")) %>%
         distinct(DATE.TIME, .keep_all = TRUE)
 
+final_emission_combined <- full_join(result_emission_LUFA_FTIR, result_emission_ANECO_FTIR, by = "DATE.TIME") %>%
+        full_join(result_emission_MBBM_FTIR, by = "DATE.TIME") %>%
+        full_join(result_emission_ATB_FTIR, by = "DATE.TIME") %>%
+        full_join(result_emission_ATB_CRDS, by = "DATE.TIME") %>%
+        full_join(result_emission_LUFA_CRDS, by = "DATE.TIME") %>%
+        full_join(result_emission_UB_CRDS, by = "DATE.TIME")
+
+write.csv(final_emission_combined, "20250408-15_final_ringversuch_emission_results_combined.csv",
+          row.names = FALSE)
+
 ########### Cleaned hourly emissions #################
 # Combine for all result dataframes
 e_CH4 <- final_emission_combined %>%
@@ -117,7 +128,7 @@ e_CH4 <- final_emission_combined %>%
                         str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
                         str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
                         str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
-                        str_detect(lab, "MBM_FTIR") ~ "MBBM_FTIR",
+                        str_detect(lab, "MBBM_FTIR") ~ "MBBM_FTIR",
                         str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
                         str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
                         str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
@@ -145,7 +156,7 @@ e_NH3 <- final_emission_combined %>%
                 str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
                 str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
                 str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
-                str_detect(lab, "MBM_FTIR") ~ "MBBM_FTIR",
+                str_detect(lab, "MBBM_FTIR") ~ "MBBM_FTIR",
                 str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
                 str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
                 str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
@@ -156,6 +167,7 @@ e_NH3 <- final_emission_combined %>%
 
 e_NH3 <- e_NH3 %>% select(-lab)
 
+######### Data visualization ############
 # --- Plotting function with 'background' ---
 plot_emission <- function(df, x, y, bg_direction) {
         library(dplyr)
@@ -186,8 +198,6 @@ plot_emission <- function(df, x, y, bg_direction) {
         
         return(p)
 }
-
-
 
 # --- Generate DATE.TIME plots ---
 plot_NH3_north <- plot_emission(e_NH3, x = "DATE.TIME", y = "e_NH3", bg_direction = "North")
@@ -237,4 +247,9 @@ for (name in names(emission_plots)) {
 png_files <- paste0(names(emission_plots), ".png")
 img_list <- magick::image_read(png_files)
 magick::image_write(image = img_list, path = "Ringversuche_emission_plots.pdf", format = "pdf")
+
+
+######### Statistical analysis ########
+summarytools::dfSummary(final_emission_combined)
+
 
