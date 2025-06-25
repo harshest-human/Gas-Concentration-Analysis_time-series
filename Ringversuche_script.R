@@ -10,6 +10,7 @@ library(ggpubr)
 library(scales)
 library(gridExtra)
 library(magick)
+library(summarytools)
 
 ######## Import Gas Data #########
 #Load processed datasets
@@ -125,4 +126,350 @@ png_files <- paste0(names(plots), ".png")
 img_list <- magick::image_read(png_files)
 magick::image_write(image = img_list, path = "Ringversuche_concentration_plots.pdf", format = "pdf")
 
+
+######### Statistical analysis ########
+# Read each dataset, convert DATE.TIME and rename columns (except DATE.TIME) with suffix:
+LUFA_FTIR_long <- read.csv("20250408-15_long_LUFA_FTIR.csv") %>%
+        mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
+        rename_with(~paste0(., "_FTIR"), -DATE.TIME)
+
+ANECO_FTIR_long <- read.csv("20250408-15_long_ANECO_FTIR.csv") %>%
+        mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
+        rename_with(~paste0(., "_FTIR"), -DATE.TIME)
+
+MBBM_FTIR_long <- read.csv("20250408-15_long_MBBM_FTIR.csv") %>%
+        mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
+        rename_with(~paste0(., "_FTIR"), -DATE.TIME)
+
+ATB_FTIR_long <- read.csv("20250408-15_long_ATB_FTIR.1.csv") %>%
+        mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
+        rename_with(~paste0(., "_FTIR.1"), -DATE.TIME)
+
+ATB_CRDS_long <- read.csv("20250408-15_long_ATB_CRDS.P8.csv") %>%
+        mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
+        rename_with(~paste0(., "_CRDS.P8"), -DATE.TIME)
+
+LUFA_CRDS_long <- read.csv("20250408-15_long_LUFA_CRDS.P8.csv") %>%
+        mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
+        rename_with(~paste0(., "_CRDS.P8"), -DATE.TIME)
+
+UB_CRDS_long <- read.csv("20250408-15_long_UB_CRDS.P8.csv") %>%
+        mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
+        rename_with(~paste0(., "_CRDS.P8"), -DATE.TIME)
+
+
+final_long_combined <- full_join(LUFA_FTIR_long, ANECO_FTIR_long, by = "DATE.TIME") %>%
+        full_join(MBBM_FTIR_long, by = "DATE.TIME") %>%
+        full_join(ATB_FTIR_long, by = "DATE.TIME") %>%
+        full_join(ATB_CRDS_long, by = "DATE.TIME") %>%
+        full_join(LUFA_CRDS_long, by = "DATE.TIME") %>%
+        full_join(UB_CRDS_long, by = "DATE.TIME") %>%
+        select(-contains("analyzer"))
+
+write.csv(final_long_combined, "20250408-15_final_concentration_long_combined.csv",
+          row.names = FALSE)
+
+
+# Calculate CO2 emissions percentage errors relative to ATB_CRDS.P8
+CO2_err <- final_long_combined %>%
+        mutate(
+                CO2_in_LUFA_FTIR_err    = 100 * (CO2_in_LUFA_FTIR     - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
+                CO2_in_ANECO_FTIR_err   = 100 * (CO2_in_ANECO_FTIR    - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
+                CO2_in_MBBM_FTIR_err    = 100 * (CO2_in_MBBM_FTIR     - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
+                CO2_in_ATB_FTIR.1_err   = 100 * (CO2_in_ATB_FTIR.1    - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
+                CO2_in_UB_CRDS.P8_err   = 100 * (CO2_in_UB_CRDS.P8    - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
+                CO2_in_LUFA_CRDS.P8_err = 100 * (CO2_in_LUFA_CRDS.P8  - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
+                CO2_N_LUFA_FTIR_err    = 100 * (CO2_N_LUFA_FTIR     - CO2_N_ATB_CRDS.P8) / CO2_N_ATB_CRDS.P8,
+                CO2_N_ANECO_FTIR_err   = 100 * (CO2_N_ANECO_FTIR    - CO2_N_ATB_CRDS.P8) / CO2_N_ATB_CRDS.P8,
+                CO2_N_MBBM_FTIR_err    = 100 * (CO2_N_MBBM_FTIR     - CO2_N_ATB_CRDS.P8) / CO2_N_ATB_CRDS.P8,
+                CO2_N_ATB_FTIR.1_err   = 100 * (CO2_N_ATB_FTIR.1    - CO2_N_ATB_CRDS.P8) / CO2_N_ATB_CRDS.P8,
+                CO2_N_UB_CRDS.P8_err   = 100 * (CO2_N_UB_CRDS.P8    - CO2_N_ATB_CRDS.P8) / CO2_N_ATB_CRDS.P8,
+                CO2_N_LUFA_CRDS.P8_err = 100 * (CO2_N_LUFA_CRDS.P8  - CO2_N_ATB_CRDS.P8) / CO2_N_ATB_CRDS.P8,
+                CO2_S_LUFA_FTIR_err    = 100 * (CO2_S_LUFA_FTIR     - CO2_S_ATB_CRDS.P8) / CO2_S_ATB_CRDS.P8,
+                CO2_S_ANECO_FTIR_err   = 100 * (CO2_S_ANECO_FTIR    - CO2_S_ATB_CRDS.P8) / CO2_S_ATB_CRDS.P8,
+                CO2_S_MBBM_FTIR_err    = 100 * (CO2_S_MBBM_FTIR     - CO2_S_ATB_CRDS.P8) / CO2_S_ATB_CRDS.P8,
+                CO2_S_ATB_FTIR.1_err   = 100 * (CO2_S_ATB_FTIR.1    - CO2_S_ATB_CRDS.P8) / CO2_S_ATB_CRDS.P8,
+                CO2_S_UB_CRDS.P8_err   = 100 * (CO2_S_UB_CRDS.P8    - CO2_S_ATB_CRDS.P8) / CO2_S_ATB_CRDS.P8,
+                CO2_S_LUFA_CRDS.P8_err = 100 * (CO2_S_LUFA_CRDS.P8  - CO2_S_ATB_CRDS.P8) / CO2_S_ATB_CRDS.P8
+        ) %>%
+        select(
+                DATE.TIME,
+                CO2_in_LUFA_FTIR_err, 
+                CO2_in_ANECO_FTIR_err, 
+                CO2_in_MBBM_FTIR_err, 
+                CO2_in_ATB_FTIR.1_err,
+                CO2_in_UB_CRDS.P8_err,
+                CO2_in_LUFA_CRDS.P8_err,
+                CO2_N_LUFA_FTIR_err, 
+                CO2_N_ANECO_FTIR_err, 
+                CO2_N_MBBM_FTIR_err, 
+                CO2_N_ATB_FTIR.1_err,
+                CO2_N_UB_CRDS.P8_err,
+                CO2_N_LUFA_CRDS.P8_err,
+                CO2_S_LUFA_FTIR_err,
+                CO2_S_ANECO_FTIR_err,
+                CO2_S_MBBM_FTIR_err,
+                CO2_S_ATB_FTIR.1_err,
+                CO2_S_UB_CRDS.P8_err,
+                CO2_S_LUFA_CRDS.P8_err
+        )
+
+# Calculate CH4 emissions percentage errors relative to ATB_CRDS.P8
+CH4_err <- final_long_combined %>%
+        mutate(
+                CH4_in_LUFA_FTIR_err    = 100 * (CH4_in_LUFA_FTIR     - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
+                CH4_in_ANECO_FTIR_err   = 100 * (CH4_in_ANECO_FTIR    - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
+                CH4_in_MBBM_FTIR_err    = 100 * (CH4_in_MBBM_FTIR     - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
+                CH4_in_ATB_FTIR.1_err   = 100 * (CH4_in_ATB_FTIR.1    - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
+                CH4_in_UB_CRDS.P8_err   = 100 * (CH4_in_UB_CRDS.P8    - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
+                CH4_in_LUFA_CRDS.P8_err = 100 * (CH4_in_LUFA_CRDS.P8  - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
+                CH4_N_LUFA_FTIR_err    = 100 * (CH4_N_LUFA_FTIR     - CH4_N_ATB_CRDS.P8) / CH4_N_ATB_CRDS.P8,
+                CH4_N_ANECO_FTIR_err   = 100 * (CH4_N_ANECO_FTIR    - CH4_N_ATB_CRDS.P8) / CH4_N_ATB_CRDS.P8,
+                CH4_N_MBBM_FTIR_err    = 100 * (CH4_N_MBBM_FTIR     - CH4_N_ATB_CRDS.P8) / CH4_N_ATB_CRDS.P8,
+                CH4_N_ATB_FTIR.1_err   = 100 * (CH4_N_ATB_FTIR.1    - CH4_N_ATB_CRDS.P8) / CH4_N_ATB_CRDS.P8,
+                CH4_N_UB_CRDS.P8_err   = 100 * (CH4_N_UB_CRDS.P8    - CH4_N_ATB_CRDS.P8) / CH4_N_ATB_CRDS.P8,
+                CH4_N_LUFA_CRDS.P8_err = 100 * (CH4_N_LUFA_CRDS.P8  - CH4_N_ATB_CRDS.P8) / CH4_N_ATB_CRDS.P8,
+                CH4_S_LUFA_FTIR_err    = 100 * (CH4_S_LUFA_FTIR     - CH4_S_ATB_CRDS.P8) / CH4_S_ATB_CRDS.P8,
+                CH4_S_ANECO_FTIR_err   = 100 * (CH4_S_ANECO_FTIR    - CH4_S_ATB_CRDS.P8) / CH4_S_ATB_CRDS.P8,
+                CH4_S_MBBM_FTIR_err    = 100 * (CH4_S_MBBM_FTIR     - CH4_S_ATB_CRDS.P8) / CH4_S_ATB_CRDS.P8,
+                CH4_S_ATB_FTIR.1_err   = 100 * (CH4_S_ATB_FTIR.1    - CH4_S_ATB_CRDS.P8) / CH4_S_ATB_CRDS.P8,
+                CH4_S_UB_CRDS.P8_err   = 100 * (CH4_S_UB_CRDS.P8    - CH4_S_ATB_CRDS.P8) / CH4_S_ATB_CRDS.P8,
+                CH4_S_LUFA_CRDS.P8_err = 100 * (CH4_S_LUFA_CRDS.P8  - CH4_S_ATB_CRDS.P8) / CH4_S_ATB_CRDS.P8
+        ) %>%
+        select(
+                DATE.TIME,
+                CH4_in_LUFA_FTIR_err, 
+                CH4_in_ANECO_FTIR_err, 
+                CH4_in_MBBM_FTIR_err, 
+                CH4_in_ATB_FTIR.1_err,
+                CH4_in_UB_CRDS.P8_err,
+                CH4_in_LUFA_CRDS.P8_err,
+                CH4_N_LUFA_FTIR_err, 
+                CH4_N_ANECO_FTIR_err, 
+                CH4_N_MBBM_FTIR_err, 
+                CH4_N_ATB_FTIR.1_err,
+                CH4_N_UB_CRDS.P8_err,
+                CH4_N_LUFA_CRDS.P8_err,
+                CH4_S_LUFA_FTIR_err,
+                CH4_S_ANECO_FTIR_err,
+                CH4_S_MBBM_FTIR_err,
+                CH4_S_ATB_FTIR.1_err,
+                CH4_S_UB_CRDS.P8_err,
+                CH4_S_LUFA_CRDS.P8_err
+        )
+
+
+
+# Calculate NH3 emissions percentage errors relative to ATB_CRDS.P8
+NH3_err <- final_long_combined %>%
+        mutate(
+                NH3_in_LUFA_FTIR_err    = 100 * (NH3_in_LUFA_FTIR     - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
+                NH3_in_ANECO_FTIR_err   = 100 * (NH3_in_ANECO_FTIR    - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
+                NH3_in_MBBM_FTIR_err    = 100 * (NH3_in_MBBM_FTIR     - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
+                NH3_in_ATB_FTIR.1_err   = 100 * (NH3_in_ATB_FTIR.1    - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
+                NH3_in_UB_CRDS.P8_err   = 100 * (NH3_in_UB_CRDS.P8    - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
+                NH3_in_LUFA_CRDS.P8_err = 100 * (NH3_in_LUFA_CRDS.P8  - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
+                NH3_N_LUFA_FTIR_err    = 100 * (NH3_N_LUFA_FTIR     - NH3_N_ATB_CRDS.P8) / NH3_N_ATB_CRDS.P8,
+                NH3_N_ANECO_FTIR_err   = 100 * (NH3_N_ANECO_FTIR    - NH3_N_ATB_CRDS.P8) / NH3_N_ATB_CRDS.P8,
+                NH3_N_MBBM_FTIR_err    = 100 * (NH3_N_MBBM_FTIR     - NH3_N_ATB_CRDS.P8) / NH3_N_ATB_CRDS.P8,
+                NH3_N_ATB_FTIR.1_err   = 100 * (NH3_N_ATB_FTIR.1    - NH3_N_ATB_CRDS.P8) / NH3_N_ATB_CRDS.P8,
+                NH3_N_UB_CRDS.P8_err   = 100 * (NH3_N_UB_CRDS.P8    - NH3_N_ATB_CRDS.P8) / NH3_N_ATB_CRDS.P8,
+                NH3_N_LUFA_CRDS.P8_err = 100 * (NH3_N_LUFA_CRDS.P8  - NH3_N_ATB_CRDS.P8) / NH3_N_ATB_CRDS.P8,
+                NH3_S_LUFA_FTIR_err    = 100 * (NH3_S_LUFA_FTIR     - NH3_S_ATB_CRDS.P8) / NH3_S_ATB_CRDS.P8,
+                NH3_S_ANECO_FTIR_err   = 100 * (NH3_S_ANECO_FTIR    - NH3_S_ATB_CRDS.P8) / NH3_S_ATB_CRDS.P8,
+                NH3_S_MBBM_FTIR_err    = 100 * (NH3_S_MBBM_FTIR     - NH3_S_ATB_CRDS.P8) / NH3_S_ATB_CRDS.P8,
+                NH3_S_ATB_FTIR.1_err   = 100 * (NH3_S_ATB_FTIR.1    - NH3_S_ATB_CRDS.P8) / NH3_S_ATB_CRDS.P8,
+                NH3_S_UB_CRDS.P8_err   = 100 * (NH3_S_UB_CRDS.P8    - NH3_S_ATB_CRDS.P8) / NH3_S_ATB_CRDS.P8,
+                NH3_S_LUFA_CRDS.P8_err = 100 * (NH3_S_LUFA_CRDS.P8  - NH3_S_ATB_CRDS.P8) / NH3_S_ATB_CRDS.P8
+        ) %>%
+        select(
+                DATE.TIME,
+                NH3_in_LUFA_FTIR_err, 
+                NH3_in_ANECO_FTIR_err, 
+                NH3_in_MBBM_FTIR_err, 
+                NH3_in_ATB_FTIR.1_err,
+                NH3_in_UB_CRDS.P8_err,
+                NH3_in_LUFA_CRDS.P8_err,
+                NH3_N_LUFA_FTIR_err, 
+                NH3_N_ANECO_FTIR_err, 
+                NH3_N_MBBM_FTIR_err, 
+                NH3_N_ATB_FTIR.1_err,
+                NH3_N_UB_CRDS.P8_err,
+                NH3_N_LUFA_CRDS.P8_err,
+                NH3_S_LUFA_FTIR_err,
+                NH3_S_ANECO_FTIR_err,
+                NH3_S_MBBM_FTIR_err,
+                NH3_S_ATB_FTIR.1_err,
+                NH3_S_UB_CRDS.P8_err,
+                NH3_S_LUFA_CRDS.P8_err
+        )
+
+
+# Pivot CO2 emission errors longer# Pivot CO2 emission errors longer
+CO2_err <- CO2_err %>%
+        pivot_longer(
+                cols = -DATE.TIME,
+                names_to = "lab",
+                values_to = "CO2_err"
+        ) %>%
+        mutate(
+                bg_direction = case_when(
+                        str_detect(lab, "_in_") ~ "Inside",
+                        str_detect(lab, "_N_") ~ "North",
+                        str_detect(lab, "_S_") ~ "South",
+                        TRUE ~ "Unknown"
+                ),
+                lab.analyzer = case_when(
+                        str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
+                        str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
+                        str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
+                        str_detect(lab, "MBBM_FTIR") ~ "MBBM_FTIR",
+                        str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
+                        str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
+                        str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
+                        TRUE ~ "Unknown"
+                ),
+                hour = as.factor(hour(DATE.TIME))
+        ) %>%
+        select(-lab)
+
+
+# Pivot CH4 emission errors longer# Pivot CO2 emission errors longer
+CH4_err <- CH4_err %>%
+        pivot_longer(
+                cols = -DATE.TIME,
+                names_to = "lab",
+                values_to = "CH4_err"
+        ) %>%
+        mutate(
+                bg_direction = case_when(
+                        str_detect(lab, "_in_") ~ "Inside",
+                        str_detect(lab, "_N_") ~ "North",
+                        str_detect(lab, "_S_") ~ "South",
+                        TRUE ~ "Unknown"
+                ),
+                lab.analyzer = case_when(
+                        str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
+                        str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
+                        str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
+                        str_detect(lab, "MBBM_FTIR") ~ "MBBM_FTIR",
+                        str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
+                        str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
+                        str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
+                        TRUE ~ "Unknown"
+                ),
+                hour = as.factor(hour(DATE.TIME))
+        ) %>%
+        select(-lab)
+
+
+# Pivot NH3 emission errors longer
+NH3_err <- NH3_err %>%
+        pivot_longer(
+                cols = -DATE.TIME,
+                names_to = "lab",
+                values_to = "NH3_err"
+        ) %>%
+        mutate(
+                bg_direction = case_when(
+                        str_detect(lab, "_in_") ~ "Inside",
+                        str_detect(lab, "_N_") ~ "North",
+                        str_detect(lab, "_S_") ~ "South",
+                        TRUE ~ "Unknown"
+                ),
+                lab.analyzer = case_when(
+                        str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
+                        str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
+                        str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
+                        str_detect(lab, "MBBM_FTIR") ~ "MBBM_FTIR",
+                        str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
+                        str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
+                        str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
+                        TRUE ~ "Unknown"
+                ),
+                hour = as.factor(hour(DATE.TIME))
+        ) %>%
+        select(-lab)
+
+
+# calculate mean relative error
+avg_CO2_err <- CO2_err %>%
+        group_by(bg_direction, lab.analyzer) %>%
+        summarise(mean_CO2_err = mean(CO2_err, na.rm = TRUE), .groups = "drop")%>%
+        mutate(bar_color = ifelse(mean_CO2_err >= 0, "Positive", "Negative"))
+
+avg_CH4_err <- CH4_err %>%
+        group_by(bg_direction, lab.analyzer) %>%
+        summarise(mean_CH4_err = mean(CH4_err, na.rm = TRUE), .groups = "drop")%>%
+        mutate(bar_color = ifelse(mean_CH4_err >= 0, "Positive", "Negative"))
+
+avg_NH3_err <- NH3_err %>%
+        group_by(bg_direction, lab.analyzer) %>%
+        summarise(mean_NH3_err = mean(NH3_err, na.rm = TRUE), .groups = "drop")%>%
+        mutate(bar_color = ifelse(mean_NH3_err >= 0, "Positive", "Negative"))
+
+
+# Create a column for bar color
+plot_CO2_err <- ggplot(avg_CO2_err, aes(x = lab.analyzer, y = mean_CO2_err, fill = bar_color)) +
+        geom_bar(stat = "identity", width = 0.7) +
+        geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.7) +
+        facet_wrap(~ bg_direction) +
+        scale_fill_manual(values = c("Positive" = "lightgreen", "Negative" = "red4")) +
+        labs(
+                title = "Mean Relative Errors of CO2 Concentrations      (Ref. = ATB_CRDS.P8)",
+                x = "Laboratory",
+                y = "CO2 Relative Error (%)",
+                fill = "Error Sign"
+        ) +
+        theme_light() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_CH4_err <- ggplot(avg_CH4_err, aes(x = lab.analyzer, y = mean_CH4_err, fill = bar_color)) +
+        geom_bar(stat = "identity", width = 0.7) +
+        geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.7) +
+        facet_wrap(~ bg_direction) +
+        scale_fill_manual(values = c("Positive" = "lightgreen", "Negative" = "red4")) +
+        labs(
+                title = "Mean Relative Errors of CH4 Concentrations      (Ref. = ATB_CRDS.P8)",
+                x = "Laboratory",
+                y = "CH4 Relative Error (%)",
+                fill = "Error Sign"
+        ) +
+        theme_light() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+plot_NH3_err <- ggplot(avg_NH3_err, aes(x = lab.analyzer, y = mean_NH3_err, fill = bar_color)) +
+        geom_bar(stat = "identity", width = 0.7) +
+        geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.7) +
+        facet_wrap(~ bg_direction) +
+        scale_fill_manual(values = c("Positive" = "lightgreen", "Negative" = "red4")) +
+        labs(
+                title = "Mean Relative Errors of NH3 Concentrations      (Ref. = ATB_CRDS.P8)",
+                x = "Laboratory",
+                y = "NH3 Relative Error (%)",
+                fill = "Error Sign"
+        ) +
+        theme_light() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Name the plot list
+err_c_plots <- list(CO2 = plot_CO2_err, CH4 = plot_CH4_err, NH3 = plot_NH3_err)
+
+# Save each plot as high-res PNG
+for (name in names(err_c_plots)) {
+        ggsave(
+                filename = paste0(name, "_c_err.png"),
+                plot = err_c_plots[[name]],
+                width = 14,
+                height = 8,
+                dpi = 600
+        )
+}
+
+# Combine saved PNGs into a single PDF
+err_c_png_files <- paste0(names(err_c_plots), "_c_err.png")
+err_c_img_list <- magick::image_read(err_c_png_files)
+magick::image_write(image = err_c_img_list, path = "Ringversuche_concentration_err_plots.pdf", format = "pdf")
 
