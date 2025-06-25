@@ -244,8 +244,8 @@ for (name in names(emission_plots)) {
 }
 
 # Read the emission PNGs and combine into a single PDF
-png_files <- paste0(names(emission_plots), ".png")
-img_list <- magick::image_read(png_files)
+e_png_files <- paste0(names(emission_plots), ".png")
+e_img_list <- magick::image_read(e_png_files)
 magick::image_write(image = img_list, path = "Ringversuche_emission_plots.pdf", format = "pdf")
 
 
@@ -374,3 +374,65 @@ e_NH3_err <- e_NH3_err %>%
         )
 
 e_NH3_err <- e_NH3_err %>% select(-lab)
+
+# calculate mean relative error
+avg_e_CH4_err <- e_CH4_err %>%
+        group_by(bg_direction, lab.analyzer) %>%
+        summarise(mean_e_CH4_err = mean(e_CH4_err, na.rm = TRUE), .groups = "drop")%>%
+        mutate(bar_color = ifelse(mean_e_CH4_err >= 0, "Positive", "Negative"))
+
+avg_e_NH3_err <- e_NH3_err %>%
+        group_by(bg_direction, lab.analyzer) %>%
+        summarise(mean_e_NH3_err = mean(e_NH3_err, na.rm = TRUE), .groups = "drop")%>%
+        mutate(bar_color = ifelse(mean_e_NH3_err >= 0, "Positive", "Negative"))
+
+
+# Create a column for bar color
+plot_e_CH4_err <- ggplot(avg_e_CH4_err, aes(x = lab.analyzer, y = mean_e_CH4_err, fill = bar_color)) +
+        geom_bar(stat = "identity", width = 0.7) +
+        geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.7) +
+        facet_wrap(~ bg_direction) +
+        scale_fill_manual(values = c("Positive" = "lightgreen", "Negative" = "red4")) +
+        labs(
+                title = "Mean Relative Errors of CH4 Emissions      (Ref. = ATB_CRDS.P8)",
+                x = "Laboratory",
+                y = "CH4 Relative Error (%)",
+                fill = "Error Sign"
+        ) +
+        theme_light() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+plot_e_NH3_err <- ggplot(avg_e_NH3_err, aes(x = lab.analyzer, y = mean_e_NH3_err, fill = bar_color)) +
+        geom_bar(stat = "identity", width = 0.7) +
+        geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.7) +
+        facet_wrap(~ bg_direction) +
+        scale_fill_manual(values = c("Positive" = "lightgreen", "Negative" = "red4")) +
+        labs(
+                title = "Mean Relative Errors of NH3 Emissions      (Ref. = ATB_CRDS.P8)",
+                x = "Laboratory",
+                y = "NH3 Relative Error (%)",
+                fill = "Error Sign"
+        ) +
+        theme_light() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Name the plot list
+err_plots <- list(CH4 = plot_e_CH4_err, NH3 = plot_e_NH3_err)
+
+# Save each plot as high-res PNG
+for (name in names(err_plots)) {
+        ggsave(
+                filename = paste0(name, "_err.png"),
+                plot = err_plots[[name]],
+                width = 14,
+                height = 8,
+                dpi = 600
+        )
+}
+
+# Combine saved PNGs into a single PDF
+err_png_files <- paste0(names(err_plots), ".png")
+err_img_list <- magick::image_read(err_png_files)
+magick::image_write(image = err_img_list, path = "Ringversuche_err_plots.pdf", format = "pdf")
