@@ -110,7 +110,7 @@ write.csv(final_emission_combined, "20250408-15_final_ringversuch_emission_resul
           row.names = FALSE)
 
 ########### Cleaned hourly emissions #################
-# Combine for all result dataframes
+# Extract emission values and pivot longer
 e_CH4 <- final_emission_combined %>%
         select(DATE.TIME, contains("e_CH4_")) %>%
         select(-contains("_per_year")) %>%
@@ -252,4 +252,125 @@ magick::image_write(image = img_list, path = "Ringversuche_emission_plots.pdf", 
 ######### Statistical analysis ########
 summarytools::dfSummary(final_emission_combined)
 
+# Calculate CH4 emissions percentage errors relative to ATB_CRDS.P8
+e_CH4_err <- final_emission_combined %>%
+        mutate(
+                e_CH4_N_LUFA_FTIR_err    = 100 * (e_CH4_N_LUFA_FTIR     - e_CH4_N_ATB_CRDS.P8) / e_CH4_N_ATB_CRDS.P8,
+                e_CH4_N_ANECO_FTIR_err   = 100 * (e_CH4_N_ANECO_FTIR    - e_CH4_N_ATB_CRDS.P8) / e_CH4_N_ATB_CRDS.P8,
+                e_CH4_N_MBBM_FTIR_err    = 100 * (e_CH4_N_MBBM_FTIR     - e_CH4_N_ATB_CRDS.P8) / e_CH4_N_ATB_CRDS.P8,
+                e_CH4_N_ATB_FTIR.1_err   = 100 * (e_CH4_N_ATB_FTIR.1    - e_CH4_N_ATB_CRDS.P8) / e_CH4_N_ATB_CRDS.P8,
+                e_CH4_N_UB_CRDS.P8_err   = 100 * (e_CH4_N_UB_CRDS.P8    - e_CH4_N_ATB_CRDS.P8) / e_CH4_N_ATB_CRDS.P8,
+                e_CH4_N_LUFA_CRDS.P8_err = 100 * (e_CH4_N_LUFA_CRDS.P8  - e_CH4_N_ATB_CRDS.P8) / e_CH4_N_ATB_CRDS.P8,
+                e_CH4_S_LUFA_FTIR_err    = 100 * (e_CH4_S_LUFA_FTIR     - e_CH4_S_ATB_CRDS.P8) / e_CH4_S_ATB_CRDS.P8,
+                e_CH4_S_ANECO_FTIR_err   = 100 * (e_CH4_S_ANECO_FTIR    - e_CH4_S_ATB_CRDS.P8) / e_CH4_S_ATB_CRDS.P8,
+                e_CH4_S_MBBM_FTIR_err    = 100 * (e_CH4_S_MBBM_FTIR     - e_CH4_S_ATB_CRDS.P8) / e_CH4_S_ATB_CRDS.P8,
+                e_CH4_S_ATB_FTIR.1_err   = 100 * (e_CH4_S_ATB_FTIR.1    - e_CH4_S_ATB_CRDS.P8) / e_CH4_S_ATB_CRDS.P8,
+                e_CH4_S_UB_CRDS.P8_err   = 100 * (e_CH4_S_UB_CRDS.P8    - e_CH4_S_ATB_CRDS.P8) / e_CH4_S_ATB_CRDS.P8,
+                e_CH4_S_LUFA_CRDS.P8_err = 100 * (e_CH4_S_LUFA_CRDS.P8  - e_CH4_S_ATB_CRDS.P8) / e_CH4_S_ATB_CRDS.P8
+        ) %>% 
+        select(
+                DATE.TIME, 
+                e_CH4_N_LUFA_FTIR_err, 
+                e_CH4_N_ANECO_FTIR_err, 
+                e_CH4_N_MBBM_FTIR_err, 
+                e_CH4_N_ATB_FTIR.1_err,
+                e_CH4_N_UB_CRDS.P8_err,
+                e_CH4_N_LUFA_CRDS.P8_err,
+                e_CH4_S_LUFA_FTIR_err,
+                e_CH4_S_ANECO_FTIR_err,
+                e_CH4_S_MBBM_FTIR_err,
+                e_CH4_S_ATB_FTIR.1_err,
+                e_CH4_S_UB_CRDS.P8_err,
+                e_CH4_S_LUFA_CRDS.P8_err
+                )
 
+
+# Calculate NH3 emissions percentage errors relative to ATB_CRDS.P8
+e_NH3_err <- final_emission_combined %>%
+        mutate(
+                e_NH3_N_LUFA_FTIR_err    = 100 * (e_NH3_N_LUFA_FTIR     - e_NH3_N_ATB_CRDS.P8) / e_NH3_N_ATB_CRDS.P8,
+                e_NH3_N_ANECO_FTIR_err   = 100 * (e_NH3_N_ANECO_FTIR    - e_NH3_N_ATB_CRDS.P8) / e_NH3_N_ATB_CRDS.P8,
+                e_NH3_N_MBBM_FTIR_err    = 100 * (e_NH3_N_MBBM_FTIR     - e_NH3_N_ATB_CRDS.P8) / e_NH3_N_ATB_CRDS.P8,
+                e_NH3_N_ATB_FTIR.1_err   = 100 * (e_NH3_N_ATB_FTIR.1    - e_NH3_N_ATB_CRDS.P8) / e_NH3_N_ATB_CRDS.P8,
+                e_NH3_N_UB_CRDS.P8_err   = 100 * (e_NH3_N_UB_CRDS.P8    - e_NH3_N_ATB_CRDS.P8) / e_NH3_N_ATB_CRDS.P8,
+                e_NH3_N_LUFA_CRDS.P8_err = 100 * (e_NH3_N_LUFA_CRDS.P8  - e_NH3_N_ATB_CRDS.P8) / e_NH3_N_ATB_CRDS.P8,
+                e_NH3_S_LUFA_FTIR_err    = 100 * (e_NH3_S_LUFA_FTIR     - e_NH3_S_ATB_CRDS.P8) / e_NH3_S_ATB_CRDS.P8,
+                e_NH3_S_ANECO_FTIR_err   = 100 * (e_NH3_S_ANECO_FTIR    - e_NH3_S_ATB_CRDS.P8) / e_NH3_S_ATB_CRDS.P8,
+                e_NH3_S_MBBM_FTIR_err    = 100 * (e_NH3_S_MBBM_FTIR     - e_NH3_S_ATB_CRDS.P8) / e_NH3_S_ATB_CRDS.P8,
+                e_NH3_S_ATB_FTIR.1_err   = 100 * (e_NH3_S_ATB_FTIR.1    - e_NH3_S_ATB_CRDS.P8) / e_NH3_S_ATB_CRDS.P8,
+                e_NH3_S_UB_CRDS.P8_err   = 100 * (e_NH3_S_UB_CRDS.P8    - e_NH3_S_ATB_CRDS.P8) / e_NH3_S_ATB_CRDS.P8,
+                e_NH3_S_LUFA_CRDS.P8_err = 100 * (e_NH3_S_LUFA_CRDS.P8  - e_NH3_S_ATB_CRDS.P8) / e_NH3_S_ATB_CRDS.P8
+        ) %>% 
+        select(
+                DATE.TIME, 
+                e_NH3_N_LUFA_FTIR_err, 
+                e_NH3_N_ANECO_FTIR_err, 
+                e_NH3_N_MBBM_FTIR_err, 
+                e_NH3_N_ATB_FTIR.1_err,
+                e_NH3_N_UB_CRDS.P8_err,
+                e_NH3_N_LUFA_CRDS.P8_err,
+                e_NH3_S_LUFA_FTIR_err,
+                e_NH3_S_ANECO_FTIR_err,
+                e_NH3_S_MBBM_FTIR_err,
+                e_NH3_S_ATB_FTIR.1_err,
+                e_NH3_S_UB_CRDS.P8_err,
+                e_NH3_S_LUFA_CRDS.P8_err
+        )
+
+
+# Extract emission errors and pivot longer
+e_CH4_err <- e_CH4_err %>%
+        select(DATE.TIME, contains("e_CH4_")) %>%
+        pivot_longer(
+                cols = -DATE.TIME,
+                names_to = "lab",
+                values_to = "e_CH4_err"
+        ) %>%
+        mutate(bg_direction = case_when(
+                str_detect(lab, "_N_") ~ "North",
+                str_detect(lab, "_S_") ~ "South",
+                TRUE ~ "Unknown"
+        ),
+        lab.analyzer = case_when(
+                str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
+                str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
+                str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
+                str_detect(lab, "MBBM_FTIR") ~ "MBBM_FTIR",
+                str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
+                str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
+                str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
+                TRUE ~ "Unknown"
+        ),
+        hour = as.factor(hour(DATE.TIME))
+        )
+
+e_CH4_err <- e_CH4_err %>% select(-lab)
+
+
+# Extract emission errors and pivot longer
+e_NH3_err <- e_NH3_err %>%
+        select(DATE.TIME, contains("e_NH3_")) %>%
+        pivot_longer(
+                cols = -DATE.TIME,
+                names_to = "lab",
+                values_to = "e_NH3_err"
+        ) %>%
+        mutate(bg_direction = case_when(
+                str_detect(lab, "_N_") ~ "North",
+                str_detect(lab, "_S_") ~ "South",
+                TRUE ~ "Unknown"
+        ),
+        lab.analyzer = case_when(
+                str_detect(lab, "LUFA_FTIR") ~ "LUFA_FTIR",
+                str_detect(lab, "ANECO_FTIR") ~ "ANECO_FTIR",
+                str_detect(lab, "ATB_FTIR.1") ~ "ATB_FTIR.1",
+                str_detect(lab, "MBBM_FTIR") ~ "MBBM_FTIR",
+                str_detect(lab, "ATB_CRDS.P8") ~ "ATB_CRDS.P8",
+                str_detect(lab, "UB_CRDS.P8") ~ "UB_CRDS.P8",
+                str_detect(lab, "LUFA_CRDS.P8") ~ "LUFA_CRDS.P8",
+                TRUE ~ "Unknown"
+        ),
+        hour = as.factor(hour(DATE.TIME))
+        )
+
+e_NH3_err <- e_NH3_err %>% select(-lab)
