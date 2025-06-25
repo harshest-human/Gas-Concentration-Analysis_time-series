@@ -435,4 +435,4 @@ for (name in names(err_plots)) {
 # Combine saved PNGs into a single PDF
 err_png_files <- paste0(names(err_plots), ".png")
 err_img_list <- magick::image_read(err_png_files)
-magick::image_write(image = err_img_list, path = "Ringversuche_err_plots.pdf", format = "pdf")
+magick::image_write(image = err_img_list, path = "Ringversuche_Emission_err_plots.pdf", format = "pdf")
