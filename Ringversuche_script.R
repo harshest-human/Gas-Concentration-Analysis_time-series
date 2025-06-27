@@ -27,13 +27,13 @@ lab_combined <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, 
 lab_combined$lab.analyzer <- paste(lab_combined$lab, lab_combined$analyzer, sep = "_")
 lab_combined$DATE.TIME <- as.POSIXct(lab_combined$DATE.TIME)
 lab_combined <- lab_combined %>% select(DATE.TIME, location, lab.analyzer, CO2, CH4, NH3)
-lab_combined <- lab_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-15 12:00:00")
+lab_combined <- lab_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 23:00:00")
 lab_combined <- lab_combined %>% mutate(hour = hour(DATE.TIME))
 lab_combined$hour <- as.factor(lab_combined$hour)
 
 #write csv
 lab_combined <- lab_combined %>% select(DATE.TIME, hour, everything())
-write.csv(lab_combined, "20250408-15_final_ringversuche_concentration_combined_data.csv", row.names = FALSE)
+write.csv(lab_combined, "20250408-15_ringversuche_concentration_combined_data.csv", row.names = FALSE)
 
 ####### Data Visualization Weekly ##########
 plot_concentration <- function(df, x, y) {
@@ -128,6 +128,8 @@ magick::image_write(image = img_list, path = "Ringversuche_concentration_plots.p
 
 
 ######### Statistical analysis ########
+summarytools::dfSummary(lab_combined)
+
 # Read each dataset, convert DATE.TIME and rename columns (except DATE.TIME) with suffix:
 LUFA_FTIR_long <- read.csv("20250408-15_long_LUFA_FTIR.csv") %>%
         mutate(DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S")) %>%
@@ -158,7 +160,7 @@ UB_CRDS_long <- read.csv("20250408-15_long_UB_CRDS.P8.csv") %>%
         rename_with(~paste0(., "_CRDS.P8"), -DATE.TIME)
 
 
-final_long_combined <- full_join(LUFA_FTIR_long, ANECO_FTIR_long, by = "DATE.TIME") %>%
+long_combined <- full_join(LUFA_FTIR_long, ANECO_FTIR_long, by = "DATE.TIME") %>%
         full_join(MBBM_FTIR_long, by = "DATE.TIME") %>%
         full_join(ATB_FTIR_long, by = "DATE.TIME") %>%
         full_join(ATB_CRDS_long, by = "DATE.TIME") %>%
@@ -166,12 +168,12 @@ final_long_combined <- full_join(LUFA_FTIR_long, ANECO_FTIR_long, by = "DATE.TIM
         full_join(UB_CRDS_long, by = "DATE.TIME") %>%
         select(-contains("analyzer"))
 
-write.csv(final_long_combined, "20250408-15_final_concentration_long_combined.csv",
+write.csv(long_combined, "20250408-15_concentration_long_combined.csv",
           row.names = FALSE)
 
 
-# Calculate CO2 emissions percentage errors relative to ATB_CRDS.P8
-CO2_err <- final_long_combined %>%
+# Calculate CO2 percentage errors relative to ATB_CRDS.P8
+CO2_err <- long_combined %>%
         mutate(
                 CO2_in_LUFA_FTIR_err    = 100 * (CO2_in_LUFA_FTIR     - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
                 CO2_in_ANECO_FTIR_err   = 100 * (CO2_in_ANECO_FTIR    - CO2_in_ATB_CRDS.P8) / CO2_in_ATB_CRDS.P8,
@@ -214,8 +216,8 @@ CO2_err <- final_long_combined %>%
                 CO2_S_LUFA_CRDS.P8_err
         )
 
-# Calculate CH4 emissions percentage errors relative to ATB_CRDS.P8
-CH4_err <- final_long_combined %>%
+# Calculate CH4 percentage errors relative to ATB_CRDS.P8
+CH4_err <- long_combined %>%
         mutate(
                 CH4_in_LUFA_FTIR_err    = 100 * (CH4_in_LUFA_FTIR     - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
                 CH4_in_ANECO_FTIR_err   = 100 * (CH4_in_ANECO_FTIR    - CH4_in_ATB_CRDS.P8) / CH4_in_ATB_CRDS.P8,
@@ -260,8 +262,8 @@ CH4_err <- final_long_combined %>%
 
 
 
-# Calculate NH3 emissions percentage errors relative to ATB_CRDS.P8
-NH3_err <- final_long_combined %>%
+# Calculate NH3 e percentage errors relative to ATB_CRDS.P8
+NH3_err <- long_combined %>%
         mutate(
                 NH3_in_LUFA_FTIR_err    = 100 * (NH3_in_LUFA_FTIR     - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
                 NH3_in_ANECO_FTIR_err   = 100 * (NH3_in_ANECO_FTIR    - NH3_in_ATB_CRDS.P8) / NH3_in_ATB_CRDS.P8,
@@ -472,4 +474,6 @@ for (name in names(err_c_plots)) {
 err_c_png_files <- paste0(names(err_c_plots), "_c_err.png")
 err_c_img_list <- magick::image_read(err_c_png_files)
 magick::image_write(image = err_c_img_list, path = "Ringversuche_concentration_err_plots.pdf", format = "pdf")
+
+
 
