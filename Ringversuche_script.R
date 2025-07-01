@@ -360,3 +360,27 @@ ggplot(err_long, aes(x = analyzer, y = delta_CO2_err, fill = analyzer)) +
         geom_boxplot() +theme_light()
 
 
+#save plots 
+y_errs <- c("e_NH3_err", "e_CH4_err", "delta_NH3_err", "delta_CH4_err", "delta_CO2_err")
+
+for (y_err in y_errs) {
+        p <- ggplot(err_long, aes_string(x = "analyzer", y = y_err, fill = "analyzer")) +
+                geom_boxplot() +
+                theme_light() +
+                labs(title = paste("Boxplot of", y_err, "by Analyzer"),
+                     x = "Analyzer",
+                     y = "Relative % Error") +
+                theme(legend.position = "none",
+                      axis.text.x = element_text(angle = 45, hjust = 1))
+        
+        file_name <- paste0(y_err, ".png")
+        
+        ggsave(filename = file_name,
+               plot = p,
+               width = 8,
+               height = 5,
+               dpi = 300)
+        
+        cat("Plot saved as", file_name, "\n")
+}
+
