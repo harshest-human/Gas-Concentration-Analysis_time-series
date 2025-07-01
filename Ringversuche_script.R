@@ -268,11 +268,11 @@ t.test(result$e_CO2_N, result$e_CO2_S, paired = TRUE)
 ######## Relative percentage errors #######
 err <- result %>%
         select(
-                DATE.TIME, hour, lab, analyzer,
+                DATE.TIME, hour, analyzer,
                 delta_NH3_S_ppm, delta_CH4_S_ppm, delta_CO2_S_ppm,
                 e_NH3_S, e_CH4_S, e_CO2_S
         ) %>%
-        group_by(DATE.TIME, hour, lab, analyzer) %>%
+        group_by(DATE.TIME, hour, analyzer) %>%
         summarise(
                 delta_NH3_S_ppm = mean(delta_NH3_S_ppm, na.rm = TRUE),
                 delta_CH4_S_ppm = mean(delta_CH4_S_ppm, na.rm = TRUE),
@@ -281,7 +281,83 @@ err <- result %>%
                 e_CH4_S = mean(e_CH4_S, na.rm = TRUE),
                 e_CO2_S = mean(e_CO2_S, na.rm = TRUE),
                 .groups = "drop"
+        ) %>%
+        pivot_wider(
+                names_from = analyzer,
+                values_from = c(delta_NH3_S_ppm, delta_CH4_S_ppm, delta_CO2_S_ppm,
+                                e_NH3_S, e_CH4_S, e_CO2_S),
+                names_sep = "_"
+        ) %>%
+        rename_with(~str_remove_all(.x, "_S_ppm|_S"))
+
+err <- err %>%
+        mutate(
+                e_NH3_FTIR.1_err  = 100 * (e_NH3_FTIR.1  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_FTIR.2_err  = 100 * (e_NH3_FTIR.2  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_FTIR.3_err  = 100 * (e_NH3_FTIR.3  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_CRDS.1_err  = 100 * (e_NH3_CRDS.1  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_CRDS.2_err  = 100 * (e_NH3_CRDS.2  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_CRDS.3_err  = 100 * (e_NH3_CRDS.3  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                
+                e_CH4_FTIR.1_err  = 100 * (e_CH4_FTIR.1  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_FTIR.2_err  = 100 * (e_CH4_FTIR.2  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_FTIR.3_err  = 100 * (e_CH4_FTIR.3  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_CRDS.1_err  = 100 * (e_CH4_CRDS.1  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_CRDS.2_err  = 100 * (e_CH4_CRDS.2  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_CRDS.3_err  = 100 * (e_CH4_CRDS.3  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                
+                delta_NH3_FTIR.1_err = 100 * (delta_NH3_FTIR.1 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
+                delta_NH3_FTIR.2_err = 100 * (delta_NH3_FTIR.2 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
+                delta_NH3_FTIR.3_err = 100 * (delta_NH3_FTIR.3 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
+                delta_NH3_CRDS.1_err = 100 * (delta_NH3_CRDS.1 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
+                delta_NH3_CRDS.2_err = 100 * (delta_NH3_CRDS.2 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
+                delta_NH3_CRDS.3_err = 100 * (delta_NH3_CRDS.3 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
+                
+                delta_CH4_FTIR.1_err = 100 * (delta_CH4_FTIR.1 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
+                delta_CH4_FTIR.2_err = 100 * (delta_CH4_FTIR.2 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
+                delta_CH4_FTIR.3_err = 100 * (delta_CH4_FTIR.3 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
+                delta_CH4_CRDS.1_err = 100 * (delta_CH4_CRDS.1 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
+                delta_CH4_CRDS.2_err = 100 * (delta_CH4_CRDS.2 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
+                delta_CH4_CRDS.3_err = 100 * (delta_CH4_CRDS.3 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
+                
+                delta_CO2_FTIR.1_err = 100 * (delta_CO2_FTIR.1 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
+                delta_CO2_FTIR.2_err = 100 * (delta_CO2_FTIR.2 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
+                delta_CO2_FTIR.3_err = 100 * (delta_CO2_FTIR.3 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
+                delta_CO2_CRDS.1_err = 100 * (delta_CO2_CRDS.1 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
+                delta_CO2_CRDS.2_err = 100 * (delta_CO2_CRDS.2 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
+                delta_CO2_CRDS.3_err = 100 * (delta_CO2_CRDS.3 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1
         )
 
+
+err_long <- err %>%
+        select(DATE.TIME, hour, matches("^(e_NH3|e_CH4|delta_NH3|delta_CH4|delta_CO2).*_err$")) %>%
+        pivot_longer(
+                cols = -c(DATE.TIME, hour),
+                names_to = c("gas", "analyzer"),
+                names_pattern = "(e_NH3|e_CH4|delta_NH3|delta_CH4|delta_CO2)_(FTIR\\.\\d|CRDS\\.\\d)_err"
+        ) %>%
+        pivot_wider(
+                id_cols = c(DATE.TIME, hour, analyzer),
+                names_from = gas,
+                values_from = value,
+                names_glue = "{gas}_err"
+        )
+
+
+# Plot boxplots comparing relative percentage error by gas and analyzer
+ggplot(err_long, aes(x = analyzer, y = e_NH3_err, fill = analyzer)) +
+        geom_boxplot() +theme_light()
+
+ggplot(err_long, aes(x = analyzer, y = e_CH4_err, fill = analyzer)) +
+        geom_boxplot() +theme_light()
+
+ggplot(err_long, aes(x = analyzer, y = delta_NH3_err, fill = analyzer)) +
+        geom_boxplot() +theme_light()
+
+ggplot(err_long, aes(x = analyzer, y = delta_CH4_err, fill = analyzer)) +
+        geom_boxplot() +theme_light()
+
+ggplot(err_long, aes(x = analyzer, y = delta_CO2_err, fill = analyzer)) +
+        geom_boxplot() +theme_light()
 
 
