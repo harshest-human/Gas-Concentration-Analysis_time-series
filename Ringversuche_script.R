@@ -11,7 +11,6 @@ library(scales)
 library(gridExtra)
 library(magick)
 library(summarytools)
-source("function_indirect.CO2.balance.method.R")
 
 ######## Import Gas Data #########
 # Load animal and temperature data
