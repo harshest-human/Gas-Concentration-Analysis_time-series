@@ -240,7 +240,10 @@ LUFA_CRDS <- read.csv("20250408-15_long_LUFA_CRDS.3.csv")
 
 # Combine all data set
 gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS)
-input_combined <-full_join(gas_data, animal_temp, by = "DATE.TIME")
+input_combined <-full_join(gas_data, animal_temp, by = "DATE.TIME") %>%
+        mutate(day = as.Date(DATE.TIME)) %>% 
+        select(DATE.TIME, day, hour, everything())
+
 
 # Write csv
 input_combined <- input_combined %>% select(DATE.TIME, hour, everything())
@@ -261,18 +264,19 @@ write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.cs
 result <- emission_combined %>%
         mutate(
                 DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
-                analyzer = as.factor(analyzer)
+                analyzer = as.factor(analyzer),
+                day = as.factor(day)
         )
 
 
 ######## Calculate Relative percentage error #######
 err <- result %>%
         select(
-                DATE.TIME, hour, analyzer,
+                DATE.TIME, day, hour, analyzer,
                 delta_NH3_S_ppm, delta_CH4_S_ppm, delta_CO2_S_ppm,
                 e_NH3_S, e_CH4_S, e_CO2_S
         ) %>%
-        group_by(DATE.TIME, hour, analyzer) %>%
+        group_by(DATE.TIME, day, hour, analyzer) %>%
         summarise(
                 delta_NH3_S_ppm = mean(delta_NH3_S_ppm, na.rm = TRUE),
                 delta_CH4_S_ppm = mean(delta_CH4_S_ppm, na.rm = TRUE),
@@ -340,14 +344,14 @@ err <- err %>%
 
 
 err_long <- err %>%
-        select(DATE.TIME, hour, matches("^(e_NH3|e_CH4|delta_NH3|delta_CH4|delta_CO2).*_err$")) %>%
+        select(DATE.TIME, day, hour, matches("^(e_NH3|e_CH4|delta_NH3|delta_CH4|delta_CO2).*_err$")) %>%
         pivot_longer(
-                cols = -c(DATE.TIME, hour),
+                cols = -c(DATE.TIME, day, hour),
                 names_to = c("gas", "analyzer"),
                 names_pattern = "(e_NH3|e_CH4|delta_NH3|delta_CH4|delta_CO2)_(FTIR\\.\\d|CRDS\\.\\d)_err"
         ) %>%
         pivot_wider(
-                id_cols = c(DATE.TIME, hour, analyzer),
+                id_cols = c(DATE.TIME, day, hour, analyzer),
                 names_from = gas,
                 values_from = value,
                 names_glue = "{gas}_err"
@@ -355,7 +359,44 @@ err_long <- err %>%
         mutate(analyzer = factor(analyzer, levels = unique(analyzer)))
 
 
-######## Data visualization ############
+
+
+######## Data visualization (Grouped by day)############
+# Concentration plots in ppm
+emicon.plot(df = result, x = day, y = delta_NH3_N_ppm)
+emicon.plot(df = result, x = day, y = delta_NH3_S_ppm)
+emicon.plot(df = result, x = day, y = delta_CH4_N_ppm)
+emicon.plot(df = result, x = day, y = delta_CH4_S_ppm)
+emicon.plot(df = result, x = day, y = delta_CO2_N_ppm)
+emicon.plot(df = result, x = day, y = delta_CO2_S_ppm)
+
+# Concentration plots in mgm3
+emicon.plot(df = result, x = day, y = delta_NH3_N_mgm3)
+emicon.plot(df = result, x = day, y = delta_NH3_S_mgm3)
+emicon.plot(df = result, x = day, y = delta_CH4_N_mgm3)
+emicon.plot(df = result, x = day, y = delta_CH4_S_mgm3)
+emicon.plot(df = result, x = day, y = delta_CO2_N_mgm3)
+emicon.plot(df = result, x = day, y = delta_CO2_S_mgm3)
+
+# Ventilation rate plots
+emicon.plot(df = result, x = day, y = Q_Vent_rate_N)
+emicon.plot(df = result, x = day, y = Q_Vent_rate_S)
+
+# Emission plots
+emicon.plot(df = result, x = day, y = e_CH4_N)
+emicon.plot(df = result, x = day, y = e_CH4_S)
+emicon.plot(df = result, x = day, y = e_NH3_N)
+emicon.plot(df = result, x = day, y = e_NH3_S)
+
+# Error plots
+emicon.plot(err_long, x = day, y = e_NH3_err)
+emicon.plot(err_long, x = day, y = e_CH4_err)
+emicon.plot(err_long, x = day, y = delta_CO2_err)
+emicon.plot(err_long, x = day, y = delta_NH3_err)
+emicon.plot(err_long, x = day, y = delta_CH4_err)
+
+
+######## Data visualization (Grouped by hour)############
 # Concentration plots in ppm
 emicon.plot(df = result, x = hour, y = delta_NH3_N_ppm)
 emicon.plot(df = result, x = hour, y = delta_NH3_S_ppm)
@@ -403,24 +444,41 @@ y_vars_result <- c(
         "e_CH4_N", "e_CH4_S"
 )
 
-for (y_var in y_vars_result) {
-        y_sym <- sym(y_var)
-        p <- emicon.plot(df = result, x = hour, y = !!y_sym)
-        ggsave(filename = paste0("result_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
-        cat("Saved result plot:", paste0("result_", y_var, ".png"), "\n")
-}
-
 # Variables for 'err_long' dataframe (error plots)
 y_vars_err <- c(
         "e_NH3_err","e_CH4_err",
         "delta_CO2_err", "delta_NH3_err", "delta_CH4_err"
 )
 
+
+# Save all plots as png
+for (y_var in y_vars_result) {
+        y_sym <- sym(y_var)
+        p <- emicon.plot(df = result, x = hour, y = !!y_sym)
+        ggsave(filename = paste0("hour_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
+        cat("Saved result plot:", paste0("hour_", y_var, ".png"), "\n")
+}
+
+for (y_var in y_vars_result) {
+        y_sym <- sym(y_var)
+        p <- emicon.plot(df = result, x = day, y = !!y_sym)
+        ggsave(filename = paste0("day_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
+        cat("Saved result plot:", paste0("day_", y_var, ".png"), "\n")
+}
+
+
 for (y_var in y_vars_err) {
         y_sym <- sym(y_var)
         p <- emicon.plot(df = err_long, x = hour, y = !!y_sym)
-        ggsave(filename = paste0("err_long_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
-        cat("Saved error plot:", paste0("err_long_", y_var, ".png"), "\n")
+        ggsave(filename = paste0("hour_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
+        cat("Saved error plot:", paste0("hour_", y_var, ".png"), "\n")
+}
+
+for (y_var in y_vars_err) {
+        y_sym <- sym(y_var)
+        p <- emicon.plot(df = err_long, x = day, y = !!y_sym)
+        ggsave(filename = paste0("day_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
+        cat("Saved error plot:", paste0("day_", y_var, ".png"), "\n")
 }
 
 
