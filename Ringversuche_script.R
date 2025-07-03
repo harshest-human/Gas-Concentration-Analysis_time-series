@@ -11,6 +11,7 @@ library(scales)
 library(gridExtra)
 library(magick)
 library(summarytools)
+library(rlang)
 
 ######## Import Gas Data #########
 # Load animal and temperature data
@@ -117,72 +118,115 @@ write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.cs
 
 
 ######## Data visualization ############
-#Development of plot functions
-emicon.plot <- function(df, x, y) {
-        library(dplyr)
-        library(ggpubr)
-        library(ggplot2)
-        library(scales)
+# Analyzer color and fill mappings
+analyzer_colors <- c(
+        "FTIR.1" = "#1b9e77",
+        "FTIR.2" = "#d95f02",
+        "FTIR.3" = "#e7298a", 
+        "FTIR.4" = "#7570b3",
+        "CRDS.1" = "#66a61e",
+        "CRDS.2" = "#e6ab02",
+        "CRDS.3" = "#a6761d"
+)
+
+# Background side labels
+bg <- list(
+        N = "(computed by North side)",
+        S = "(computed by South side)",
         
-        # Define y-axis labels with "computed by" for ventilation and background info for others
-        ylabels <- list(
-                # Concentrations ppm
-                "delta_NH3_N_ppm" = "NH3 Concentration Δ (ppm) (computed by North background)",
-                "delta_CH4_N_ppm" = "CH4 Concentration Δ (ppm) (computed by North background)",
-                "delta_CO2_N_ppm" = "CO2 Concentration Δ (ppm) (computed by North background)",
-                "delta_NH3_S_ppm" = "NH3 Concentration Δ (ppm) (computed by South background)",
-                "delta_CH4_S_ppm" = "CH4 Concentration Δ (ppm) (computed by South background)",
-                "delta_CO2_S_ppm" = "CO2 Concentration Δ (ppm) (computed by South background)",
-                
-                # Concentrations mg/m³
-                "delta_NH3_N_mgm3" = "NH3 Concentration Δ (mg/m³) (computed by North background)",
-                "delta_CH4_N_mgm3" = "CH4 Concentration Δ (mg/m³) (computed by North background)",
-                "delta_CO2_N_mgm3" = "CO2 Concentration Δ (mg/m³) (computed by North background)",
-                "delta_NH3_S_mgm3" = "NH3 Concentration Δ (mg/m³) (computed by South background)",
-                "delta_CH4_S_mgm3" = "CH4 Concentration Δ (mg/m³) (computed by South background)",
-                "delta_CO2_S_mgm3" = "CO2 Concentration Δ (mg/m³) (computed by South background)",
-                
-                # Ventilation rates
-                "Q_Vent_rate_N" = "Ventilation Rate (m³/h) (computed by North background)",
-                "Q_Vent_rate_S" = "Ventilation Rate (m³/h) (computed by South background)",
-                
-                # Emissions g/h
-                "e_NH3_N" = "NH3 Emission (g/h) (North background)",
-                "e_CH4_N" = "CH4 Emission (g/h) (North background)",
-                "e_CO2_N" = "CO2 Emission (g/h) (North background)",
-                "e_NH3_S" = "NH3 Emission (g/h) (South background)",
-                "e_CH4_S" = "CH4 Emission (g/h) (South background)",
-                "e_CO2_S" = "CO2 Emission (g/h) (South background)"
+)
+
+# Per year suffix
+py <- list(per_year = "per year")
+
+# Function to generate plotmath labels
+get_plot_label <- function(varname) {
+        match <- regexec("^(e|delta|Q_Vent_rate|err)_?(CH4|CO2|NH3)?_?(N|S)?(?:_(ppm|mgm3|per_year))?$", varname)
+        parts <- regmatches(varname, match)[[1]]
+        
+        if (length(parts) == 0) return(varname)
+        
+        type <- parts[2]
+        gas <- parts[3]
+        side <- parts[4]
+        suffix <- parts[5]
+        
+        gas_expr <- switch(gas,
+                           CH4 = quote(CH[4]),
+                           CO2 = quote(CO[2]),
+                           NH3 = quote(NH[3]),
+                           NULL
         )
         
-        # Check if x exists in df
-        if (!(x %in% names(df))) stop(paste("x variable", x, "not found in data frame"))
-        if (!(y %in% names(df))) stop(paste("y variable", y, "not found in data frame"))
+        label <- switch(type,
+                        e = bquote(.(gas_expr)~"Emission (g·h"^{-1}*")"),
+                        delta = if (!is.null(suffix) && suffix %in% c("ppm", "mgm3")) {
+                                if (suffix == "ppm") {
+                                        bquote(Delta*.(gas_expr)~"(ppm)")
+                                } else if (suffix == "mgm3") {
+                                        bquote(Delta*.(gas_expr)~"(mg·m"^{-3}*")")
+                                }
+                        },
+                        Q_Vent_rate = bquote("Ventilation rate (m"^3*"/h)"),
+                        err = bquote("Relative error of "*.(gas_expr)*" (%)"),
+                        varname
+        )
         
-        # Set plot title y-label from list or default to y
-        y_label <- ifelse(!is.null(ylabels[[y]]), ylabels[[y]], y)
+        # Add background side
+        if (!is.null(side) && nzchar(side)) {
+                label <- bquote(.(label)~.(bg[[side]]))
+        }
         
-        # Basic plot with ggline
-        p <- ggline(df, x = x, y = y,
-                    add = "mean_se",
-                    color = "analyzer") +
-                labs(title = paste(y_label, "Trends (mean ± SE)"),
-                     x = x,
-                     y = y_label,
-                     color = "Analyzer") +
+        # Add per_year if present
+        if (!is.null(suffix) && suffix == "per_year") {
+                label <- bquote(.(label)~.(py[["per_year"]]))
+        }
+        
+        return(label)
+}
+
+# Main plotting function
+emicon.plot <- function(df, x, y) {
+        # Capture and convert to strings
+        x_var <- enquo(x)
+        y_var <- enquo(y)
+        x_str <- as_label(x_var)
+        y_str <- as_label(y_var)
+        
+        # Get math label for y axis
+        y_label <- get_plot_label(y_str)
+        
+        # Base plot
+        p <- ggline(
+                df, x = x_str, y = y_str,
+                add = "mean_se",
+                color = "analyzer",
+                palette = analyzer_colors
+        ) +
+                labs(
+                        x = x_str,
+                        y = y_label,
+                        color = "Analyzer",
+                        fill = "Analyzer"
+                ) +
                 scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
                 theme_light() +
-                theme(legend.position = "top")
+                theme(
+                        legend.position = "right",
+                        axis.title.y = element_text(size = 10),
+                        plot.title = element_blank(),
+                        plot.caption = element_text(size = 10, hjust = 0.5)
+                )
         
         # If x is datetime, add datetime scale and rotate labels
-        if (inherits(df[[x]], "POSIXct") || inherits(df[[x]], "POSIXt")) {
+        if (inherits(df[[x_str]], "POSIXct") || inherits(df[[x_str]], "POSIXt")) {
                 p <- p +
                         scale_x_datetime(date_breaks = "6 hours", date_labels = "%d.%m %H:%M") +
                         theme(axis.text.x = element_text(angle = 45, hjust = 1))
         }
         
         # If x = "hour" (numeric from 0 to 23), set breaks for every hour
-        if (x == "hour") {
+        if (x_str == "hour") {
                 p <- p + 
                         scale_x_continuous(breaks = 0:23) +
                         theme(axis.text.x = element_text(angle = 0))
@@ -193,35 +237,38 @@ emicon.plot <- function(df, x, y) {
 
 
 # DATE.TIME conversion
-result <- emission_combined %>% mutate(DATE.TIME <- as.POSIXct(emission_combined$DATE.TIME, format = "%Y-%m-%d %H:%M:%S"))
+result <- emission_combined %>%
+        mutate(
+                DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
+                analyzer = as.factor(analyzer)
+        )
 
 # Concentration plots in ppm
-emicon.plot(df = result, x = "hour", y = "delta_NH3_N_ppm")
-emicon.plot(df = result, x = "hour", y = "delta_NH3_S_ppm")
-emicon.plot(df = result, x = "hour", y = "delta_CH4_N_ppm")
-emicon.plot(df = result, x = "hour", y = "delta_CH4_S_ppm")
-emicon.plot(df = result, x = "hour", y = "delta_CO2_N_ppm")
-emicon.plot(df = result, x = "hour", y = "delta_CO2_S_ppm")
+emicon.plot(df = result, x = hour, y = delta_NH3_N_ppm)
+emicon.plot(df = result, x = hour, y = delta_NH3_S_ppm)
+emicon.plot(df = result, x = hour, y = delta_CH4_N_ppm)
+emicon.plot(df = result, x = hour, y = delta_CH4_S_ppm)
+emicon.plot(df = result, x = hour, y = delta_CO2_N_ppm)
+emicon.plot(df = result, x = hour, y = delta_CO2_S_ppm)
 
 # Concentration plots in mgm3
-emicon.plot(df = result, x = "hour", y = "delta_NH3_N_mgm3")
-emicon.plot(df = result, x = "hour", y = "delta_NH3_S_mgm3")
-emicon.plot(df = result, x = "hour", y = "delta_CH4_N_mgm3")
-emicon.plot(df = result, x = "hour", y = "delta_CH4_S_mgm3")
-emicon.plot(df = result, x = "hour", y = "delta_CO2_N_mgm3")
-emicon.plot(df = result, x = "hour", y = "delta_CO2_S_mgm3")
-
+emicon.plot(df = result, x = hour, y = delta_NH3_N_mgm3)
+emicon.plot(df = result, x = hour, y = delta_NH3_S_mgm3)
+emicon.plot(df = result, x = hour, y = delta_CH4_N_mgm3)
+emicon.plot(df = result, x = hour, y = delta_CH4_S_mgm3)
+emicon.plot(df = result, x = hour, y = delta_CO2_N_mgm3)
+emicon.plot(df = result, x = hour, y = delta_CO2_S_mgm3)
 
 # Ventilation rate plots
-emicon.plot(df = result, x = "hour", y = "Q_Vent_rate_N")
-emicon.plot(df = result, x = "hour", y = "Q_Vent_rate_N")
+emicon.plot(df = result, x = hour, y = Q_Vent_rate_N)
+emicon.plot(df = result, x = hour, y = Q_Vent_rate_S)
 
+# Emission plots
+emicon.plot(df = result, x = hour, y = e_CH4_N)
+emicon.plot(df = result, x = hour, y = e_CH4_S)
+emicon.plot(df = result, x = hour, y = e_NH3_N)
+emicon.plot(df = result, x = hour, y = e_NH3_S)
 
-#emission plots
-emicon.plot(df = result, x = "hour", y = "e_CH4_N")
-emicon.plot(df = result, x = "hour", y = "e_CH4_S")
-emicon.plot(df = result, x = "hour", y = "e_NH3_N")
-emicon.plot(df = result, x = "hour", y = "e_NH3_S")
 
 
 # save plots
@@ -235,7 +282,9 @@ y_vars <- c("Q_Vent_rate_N", "Q_Vent_rate_S",
             "e_CH4_N", "e_CH4_S")
 
 for (y_var in y_vars) {
-        p <- emicon.plot(df = result, x = "hour", y = y_var)
+        y_sym <- sym(y_var)  # convert string to symbol
+        
+        p <- emicon.plot(df = result, x = hour, y = !!y_sym)
         
         file_name <- paste0(y_var, ".png")
         
@@ -247,7 +296,6 @@ for (y_var in y_vars) {
         
         cat("Plot saved as", file_name, "\n")
 }
-
 
 
 ######## Statistical Data Analysis #######
@@ -291,41 +339,82 @@ err <- result %>%
 
 err <- err %>%
         mutate(
-                e_NH3_FTIR.1_err  = 100 * (e_NH3_FTIR.1  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_FTIR.2_err  = 100 * (e_NH3_FTIR.2  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_FTIR.3_err  = 100 * (e_NH3_FTIR.3  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_CRDS.1_err  = 100 * (e_NH3_CRDS.1  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_CRDS.2_err  = 100 * (e_NH3_CRDS.2  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_CRDS.3_err  = 100 * (e_NH3_CRDS.3  - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                # NH3 emissions
+                e_NH3_FTIR.1_err = 100 * (e_NH3_FTIR.1 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_FTIR.2_err = 100 * (e_NH3_FTIR.2 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_FTIR.3_err = 100 * (e_NH3_FTIR.3 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_FTIR.4_err = 100 * (e_NH3_FTIR.4 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_CRDS.1_err = 100 * (e_NH3_CRDS.1 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_CRDS.2_err = 100 * (e_NH3_CRDS.2 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
+                e_NH3_CRDS.3_err = 100 * (e_NH3_CRDS.3 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
                 
-                e_CH4_FTIR.1_err  = 100 * (e_CH4_FTIR.1  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_FTIR.2_err  = 100 * (e_CH4_FTIR.2  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_FTIR.3_err  = 100 * (e_CH4_FTIR.3  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_CRDS.1_err  = 100 * (e_CH4_CRDS.1  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_CRDS.2_err  = 100 * (e_CH4_CRDS.2  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_CRDS.3_err  = 100 * (e_CH4_CRDS.3  - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                # CH4 emissions
+                e_CH4_FTIR.1_err = 100 * (e_CH4_FTIR.1 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_FTIR.2_err = 100 * (e_CH4_FTIR.2 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_FTIR.3_err = 100 * (e_CH4_FTIR.3 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_FTIR.4_err = 100 * (e_CH4_FTIR.4 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_CRDS.1_err = 100 * (e_CH4_CRDS.1 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_CRDS.2_err = 100 * (e_CH4_CRDS.2 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
+                e_CH4_CRDS.3_err = 100 * (e_CH4_CRDS.3 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
                 
+                # NH3 deltas
                 delta_NH3_FTIR.1_err = 100 * (delta_NH3_FTIR.1 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
                 delta_NH3_FTIR.2_err = 100 * (delta_NH3_FTIR.2 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
                 delta_NH3_FTIR.3_err = 100 * (delta_NH3_FTIR.3 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
+                delta_NH3_FTIR.4_err = 100 * (delta_NH3_FTIR.4 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
                 delta_NH3_CRDS.1_err = 100 * (delta_NH3_CRDS.1 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
                 delta_NH3_CRDS.2_err = 100 * (delta_NH3_CRDS.2 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
                 delta_NH3_CRDS.3_err = 100 * (delta_NH3_CRDS.3 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
                 
+                # CH4 deltas
                 delta_CH4_FTIR.1_err = 100 * (delta_CH4_FTIR.1 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
                 delta_CH4_FTIR.2_err = 100 * (delta_CH4_FTIR.2 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
                 delta_CH4_FTIR.3_err = 100 * (delta_CH4_FTIR.3 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
+                delta_CH4_FTIR.4_err = 100 * (delta_CH4_FTIR.4 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
                 delta_CH4_CRDS.1_err = 100 * (delta_CH4_CRDS.1 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
                 delta_CH4_CRDS.2_err = 100 * (delta_CH4_CRDS.2 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
                 delta_CH4_CRDS.3_err = 100 * (delta_CH4_CRDS.3 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
                 
+                # CO2 deltas
                 delta_CO2_FTIR.1_err = 100 * (delta_CO2_FTIR.1 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
                 delta_CO2_FTIR.2_err = 100 * (delta_CO2_FTIR.2 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
                 delta_CO2_FTIR.3_err = 100 * (delta_CO2_FTIR.3 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
+                delta_CO2_FTIR.4_err = 100 * (delta_CO2_FTIR.4 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
                 delta_CO2_CRDS.1_err = 100 * (delta_CO2_CRDS.1 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
                 delta_CO2_CRDS.2_err = 100 * (delta_CO2_CRDS.2 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
                 delta_CO2_CRDS.3_err = 100 * (delta_CO2_CRDS.3 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1
         )
+
+
+# Development of function rm_outliers_IQR
+rm_outliers_IQR <- function(df, cols) {
+        for (col in cols) {
+                Q1 <- quantile(df[[col]], 0.25, na.rm = TRUE)
+                Q3 <- quantile(df[[col]], 0.75, na.rm = TRUE)
+                IQR_val <- Q3 - Q1
+                lower <- Q1 - 1.5 * IQR_val
+                upper <- Q3 + 1.5 * IQR_val
+                
+                # Replace outliers with NA (or any flag value)
+                df[[col]] <- ifelse(df[[col]] < lower | df[[col]] > upper, NA, df[[col]])
+        }
+        return(df)
+}
+
+
+# Usage
+err <- rm_outliers_IQR(err, c(
+        "e_NH3_FTIR.1_err", "e_NH3_FTIR.2_err", "e_NH3_FTIR.3_err", "e_NH3_FTIR.4_err",
+        "e_NH3_CRDS.1_err", "e_NH3_CRDS.2_err", "e_NH3_CRDS.3_err",
+        "e_CH4_FTIR.1_err", "e_CH4_FTIR.2_err", "e_CH4_FTIR.3_err", "e_CH4_FTIR.4_err",
+        "e_CH4_CRDS.1_err", "e_CH4_CRDS.2_err", "e_CH4_CRDS.3_err",
+        "delta_NH3_FTIR.1_err", "delta_NH3_FTIR.2_err", "delta_NH3_FTIR.3_err", "delta_NH3_FTIR.4_err",
+        "delta_NH3_CRDS.1_err", "delta_NH3_CRDS.2_err", "delta_NH3_CRDS.3_err",
+        "delta_CH4_FTIR.1_err", "delta_CH4_FTIR.2_err", "delta_CH4_FTIR.3_err", "delta_CH4_FTIR.4_err",
+        "delta_CH4_CRDS.1_err", "delta_CH4_CRDS.2_err", "delta_CH4_CRDS.3_err",
+        "delta_CO2_FTIR.1_err", "delta_CO2_FTIR.2_err", "delta_CO2_FTIR.3_err", "delta_CO2_FTIR.4_err",
+        "delta_CO2_CRDS.1_err", "delta_CO2_CRDS.2_err", "delta_CO2_CRDS.3_err"
+))
 
 
 err_long <- err %>%
@@ -340,21 +429,30 @@ err_long <- err %>%
                 names_from = gas,
                 values_from = value,
                 names_glue = "{gas}_err"
-        )
+        ) %>%
+        mutate(analyzer = factor(analyzer, levels = unique(analyzer)))
 
 
 # Plot boxplots comparing relative percentage error by gas and analyzer
 ggplot(err_long, aes(x = analyzer, y = e_NH3_err, fill = analyzer)) +
-        geom_boxplot() +theme_light()
+        geom_jitter(width = 0.2, alpha = 0.3, color = "gray") +
+        geom_boxplot() + theme_light() +
+        scale_y_continuous(breaks = seq(-100, 100, by = 10))
 
 ggplot(err_long, aes(x = analyzer, y = e_CH4_err, fill = analyzer)) +
-        geom_boxplot() +theme_light()
+        geom_jitter(width = 0.2, alpha = 0.3, color = "gray") +
+        geom_boxplot() + theme_light() +
+        scale_y_continuous(breaks = seq(-100, 100, by = 10))
 
 ggplot(err_long, aes(x = analyzer, y = delta_NH3_err, fill = analyzer)) +
-        geom_boxplot() +theme_light()
+        geom_jitter(width = 0.2, alpha = 0.3, color = "gray") +
+        geom_boxplot() + theme_light() +
+        scale_y_continuous(breaks = seq(-100, 100, by = 10))
 
 ggplot(err_long, aes(x = analyzer, y = delta_CH4_err, fill = analyzer)) +
-        geom_boxplot() +theme_light()
+        geom_jitter(width = 0.2, alpha = 0.3, color = "gray") +
+        geom_boxplot() + theme_light() +
+        scale_y_continuous(breaks = seq(-100, 100, by = 10))
 
 ggplot(err_long, aes(x = analyzer, y = delta_CO2_err, fill = analyzer)) +
         geom_boxplot() +theme_light()
