@@ -359,8 +359,6 @@ err_long <- err %>%
         mutate(analyzer = factor(analyzer, levels = unique(analyzer)))
 
 
-
-
 ######## Data visualization (Grouped by day)############
 # Concentration plots in ppm
 emicon.plot(df = result, x = day, y = delta_NH3_N_ppm)
@@ -441,7 +439,7 @@ y_vars_result <- c(
         "delta_NH3_N_mgm3", "delta_NH3_S_mgm3",
         "delta_CH4_N_mgm3", "delta_CH4_S_mgm3",
         "delta_CO2_N_mgm3", "delta_CO2_S_mgm3",
-        "e_CH4_N", "e_CH4_S"
+        "e_CH4_N", "e_CH4_S", "e_NH3_N", "e_NH3_S"
 )
 
 # Variables for 'err_long' dataframe (error plots)
