@@ -368,14 +368,6 @@ emicon.plot(df = result, x = day, y = delta_CH4_S_ppm)
 emicon.plot(df = result, x = day, y = delta_CO2_N_ppm)
 emicon.plot(df = result, x = day, y = delta_CO2_S_ppm)
 
-# Concentration plots in mgm3
-emicon.plot(df = result, x = day, y = delta_NH3_N_mgm3)
-emicon.plot(df = result, x = day, y = delta_NH3_S_mgm3)
-emicon.plot(df = result, x = day, y = delta_CH4_N_mgm3)
-emicon.plot(df = result, x = day, y = delta_CH4_S_mgm3)
-emicon.plot(df = result, x = day, y = delta_CO2_N_mgm3)
-emicon.plot(df = result, x = day, y = delta_CO2_S_mgm3)
-
 # Ventilation rate plots
 emicon.plot(df = result, x = day, y = Q_Vent_rate_N)
 emicon.plot(df = result, x = day, y = Q_Vent_rate_S)
@@ -402,14 +394,6 @@ emicon.plot(df = result, x = hour, y = delta_CH4_N_ppm)
 emicon.plot(df = result, x = hour, y = delta_CH4_S_ppm)
 emicon.plot(df = result, x = hour, y = delta_CO2_N_ppm)
 emicon.plot(df = result, x = hour, y = delta_CO2_S_ppm)
-
-# Concentration plots in mgm3
-emicon.plot(df = result, x = hour, y = delta_NH3_N_mgm3)
-emicon.plot(df = result, x = hour, y = delta_NH3_S_mgm3)
-emicon.plot(df = result, x = hour, y = delta_CH4_N_mgm3)
-emicon.plot(df = result, x = hour, y = delta_CH4_S_mgm3)
-emicon.plot(df = result, x = hour, y = delta_CO2_N_mgm3)
-emicon.plot(df = result, x = hour, y = delta_CO2_S_mgm3)
 
 # Ventilation rate plots
 emicon.plot(df = result, x = hour, y = Q_Vent_rate_N)
