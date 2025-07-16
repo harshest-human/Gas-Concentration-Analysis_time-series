@@ -462,7 +462,7 @@ c_long <- emission_reshaped %>%
         drop_na(concentration)
 
 c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
-        geom_boxplot() +
+        geom_boxplot(outliers = FALSE) +
         facet_grid(gas ~ location, scales = "free_y") + 
         labs(title = "CO2, CH4 and NH3 Concentration by Analyzer and Location",
              y = "(Concentration) [ppm]",
@@ -477,7 +477,7 @@ d_long <- emission_reshaped %>%
         drop_na(concentration)
 
 d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
-        geom_boxplot() +
+        geom_boxplot(outliers = FALSE) +
         facet_grid(gas ~ location, scales = "free_y") + 
         labs(
                 title = expression("ΔCO"[2]*", ΔCH"[4]*" and ΔNH"[3]*" by Analyzer and Location"),
@@ -495,7 +495,7 @@ e_long <- emission_reshaped %>%
         drop_na(emission)
 
 e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
-        geom_boxplot() +
+        geom_boxplot(outliers = FALSE) +
         facet_grid(gas ~ location, scales = "free_y") +
         labs(
                 title = "Emissions of CH4 and NH3 by Analyzer and Location",
@@ -509,12 +509,12 @@ e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
 # Ventilation rate Boxplots
 q_long <- emission_reshaped %>%
         filter(type == "Ventilation rate", unit == "m h^-1") %>%
-        select(analyzer, location, Q) %>%   
+        select(analyzer, location, Q) %>%
         drop_na(Q)
 
 q_boxplot <- ggplot(q_long, aes(x = analyzer, y = Q, fill = analyzer)) +
-        geom_boxplot() +
-        facet_wrap(~ location, scales = "free_y") +
+        geom_boxplot(outlier.shape = NA) + 
+        facet_wrap(~ location) +
         labs(
                 title = "Ventilation Rate (Q) by Analyzer and Location",
                 y = "Ventilation Rate [m³/h]",
