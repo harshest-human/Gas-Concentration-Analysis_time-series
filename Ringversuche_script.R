@@ -209,8 +209,35 @@ rm_outliers_IQR <- function(df, cols) {
 }
 
 
-# Development of function HSD_matrix
-HSD_matrix <- function(data, response_vars, group_var) {
+# Development of function stat_table
+stat_table <- function(data, response_vars, group_var = "analyzer") {
+        # Load required libraries
+        require(dplyr)
+        require(DescTools)
+        require(tidyselect)
+        
+        data %>%
+                group_by(.data[[group_var]]) %>%
+                summarise(
+                        n = n(),
+                        across(
+                                all_of(response_vars),
+                                list(
+                                        mean = ~mean(., na.rm = TRUE),
+                                        sd   = ~sd(., na.rm = TRUE),
+                                        cv   = ~DescTools::CoefVar(., na.rm = TRUE) * 100
+                                ),
+                                .names = "{.fn}_{.col}"
+                        ),
+                        .groups = "drop"
+                ) %>%
+                rename_with(~paste0(.x, " (ppm)"), .cols = starts_with(c("mean_", "sd_"))) %>%
+                rename_with(~paste0(.x, " (%)"),       .cols = starts_with("cv_"))
+}
+
+
+# Development of function HSD_table
+HSD_table <- function(data, response_vars, group_var) {
         
         # Helper function to get labeled Tukey results for one variable
         get_tukey_labels <- function(var) {
@@ -484,28 +511,10 @@ vars <- c(
         "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
 )
 
-stat_table <- result %>%
-        group_by(analyzer) %>%
-        summarise(
-                n = n(),  # Number of observations per group
-                across(
-                        all_of(vars),
-                        list(
-                                mean = ~mean(., na.rm = TRUE),
-                                sd = ~sd(., na.rm = TRUE),
-                                cv = ~DescTools::CoefVar(., na.rm = TRUE) * 100
-                        ),
-                        .names = "{.fn}_{.col}"
-                )
-        ) %>%
-        rename_with(~paste0(.x, " (ppm)"), 
-                    .cols = starts_with(c("mean_", "sd_"))) %>%
-        rename_with(~paste0(.x, " (%)"), 
-                    .cols = starts_with("cv_"))
+# stat_table
+result_stat_summary <- stat_table(data = result, response_vars = vars, group_var = "analyzer")
+write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
 
-################ Analysis of Significant Differences ######################
-# Tukey HSD by analyzer
-HSD_table <- HSD_matrix(data = result, response_vars = vars, group_var = "analyzer")
-
-# Save as CSV
-write_excel_csv(HSD_table, "20250408_20250414_HSD_analyzer_table.csv")
+# Tukey HSD
+result_HSD_table <- HSD_table(data = result, response_vars = vars, group_var = "analyzer")
+write_excel_csv(result_HSD_table, "20250408_20250414_HSD_table.csv")
