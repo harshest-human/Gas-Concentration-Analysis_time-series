@@ -465,8 +465,8 @@ d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer
         geom_boxplot(outliers = FALSE) +
         facet_grid(gas ~ location, scales = "free_y") + 
         labs(
-                title = expression("ΔCO"[2]*", ΔCH"[4]*" and ΔNH"[3]*" by Analyzer and Location"),
-                y = "Delta Concentration [ppm]",
+                title = expression("Delta concetrations of CO2, CH4, and NH3 by Analyzer and Location"),
+                y = "Concentration (delta) [ppm]",
                 fill = "Analyzer"
         ) +
         theme_bw() +
