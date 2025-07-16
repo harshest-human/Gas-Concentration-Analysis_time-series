@@ -17,7 +17,84 @@ library(rstatix)
 
 
 ######## Development of functions #######
-
+# reshape parameters
+reparam <- function(data) {
+        library(dplyr)
+        library(tidyr)
+        library(stringr)
+        
+        meta_cols <- c("DATE.TIME", "day", "hour", "lab", "analyzer")
+        gases <- c("CO2", "CH4", "NH3")
+        
+        gas_pattern <- paste0(
+                "(",
+                paste(c(
+                        paste0("^", gases, "_(in|N|S)$"),
+                        paste0("^delta_", gases, "_(N|S)(_ppm|_mgm3)?$"),
+                        paste0("^e_", gases, "_(N|S)$")
+                ), collapse = "|"),
+                ")"
+        )
+        
+        gas_cols <- grep(gas_pattern, names(data), value = TRUE)
+        
+        if (length(gas_cols) == 0) {
+                stop("No gas-related columns matched. Please check column names or patterns.")
+        }
+        
+        df <- data %>% select(all_of(meta_cols), all_of(gas_cols))
+        
+        long_df <- df %>%
+                pivot_longer(
+                        cols = all_of(gas_cols),
+                        names_to = "variable",
+                        values_to = "value"
+                ) %>%
+                mutate(
+                        gas = str_extract(variable, "CO2|CH4|NH3"),
+                        type = case_when(
+                                str_starts(variable, "e_") ~ "emission",
+                                str_starts(variable, "delta_") ~ "delta",
+                                TRUE ~ "concentration"
+                        ),
+                        unit = case_when(
+                                type == "emission" ~ "g h^-1",
+                                str_detect(variable, "_mgm3") ~ "mg m^-3",
+                                str_detect(variable, "_ppm") ~ "ppm",
+                                TRUE ~ "ppm"
+                        ),
+                        location_code = str_extract(variable, "(?<=_)(in|N|S)(?=(_|$))"),
+                        location = case_when(
+                                location_code == "in" ~ "Ringline inside",
+                                location_code == "N" ~ "North outside",
+                                location_code == "S" ~ "South outside",
+                                TRUE ~ NA_character_
+                        )
+                ) %>%
+                select(all_of(meta_cols), location, type, unit, gas, value)
+        
+        wide_gas_df <- long_df %>%
+                pivot_wider(
+                        names_from = gas,
+                        values_from = value
+                ) %>%
+                relocate(CO2, CH4, NH3, .after = unit) %>%
+                mutate(
+                        DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
+                        day = as.factor(day),
+                        hour = as.factor(hour),
+                        lab = as.factor(lab),
+                        analyzer = as.factor(analyzer),
+                        location = as.factor(location),
+                        type = as.factor(type),
+                        unit = as.factor(unit),
+                        CO2 = as.numeric(CO2),
+                        CH4 = as.numeric(CH4),
+                        NH3 = as.numeric(NH3)
+                )
+        
+        return(wide_gas_df)
+}
 
 # Development of indirect.CO2.balance function
 indirect.CO2.balance <- function(df) {
@@ -156,61 +233,6 @@ HSD_table <- function(data, response_vars, group_var) {
 }
 
 
-# Development of function relerror
-relerror <- function(data, gases, reference) {
-        library(dplyr)
-        library(tidyr)
-        library(stringr)
-        
-        vars_base <- c(gases, "Q_Vent_rate")
-        
-        build_patterns <- function(g) {
-                c(
-                        paste0("^", g, "(_in|_N|_S)?$"),
-                        paste0("^delta_", g, "(_N|_S)(_ppm|_mgm3)?$"),
-                        paste0("^e_", g, "(_N|_S)?$")
-                )
-        }
-        
-        all_patterns <- unlist(lapply(vars_base, build_patterns))
-        
-        selected_vars <- unique(unlist(
-                lapply(all_patterns, function(p) grep(p, names(data), value = TRUE))
-        ))
-        
-        needed_cols <- c("DATE.TIME", "day", "hour", "analyzer", selected_vars)
-        
-        # Average values by grouping metadata and analyzer (still keeping analyzer in grouping)
-        err <- data %>%
-                select(all_of(needed_cols)) %>%
-                group_by(DATE.TIME, day, hour, analyzer) %>%
-                summarise(across(all_of(selected_vars), ~ mean(.x, na.rm = TRUE)), .groups = "drop")
-        
-        # Now compute errors without pivoting (keep analyzer column separate)
-        
-        # Get reference rows (for chosen analyzer)
-        ref_data <- err %>% filter(analyzer == reference) %>% select(-analyzer)
-        
-        # Join err data with ref_data by DATE.TIME, day, hour
-        err_joined <- err %>%
-                filter(analyzer != reference) %>%
-                left_join(ref_data, by = c("DATE.TIME", "day", "hour"), suffix = c("", "_ref"))
-        
-        # For each selected_var compute relative error compared to *_ref
-        for (var in selected_vars) {
-                err_joined[[paste0(var, "_err")]] <- 100 * (err_joined[[var]] - err_joined[[paste0(var, "_ref")]]) / err_joined[[paste0(var, "_ref")]]
-        }
-        
-        # Keep original columns plus error columns
-        error_cols <- paste0(selected_vars, "_err")
-        
-        result <- err_joined %>%
-                select(DATE.TIME, day, hour, analyzer, all_of(selected_vars), all_of(error_cols))
-        
-        return(result)
-}
-
-
 ######## Import Gas Data #########
 # Load animal and temperature data
 animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
@@ -247,16 +269,6 @@ emission_combined  <- indirect.CO2.balance(input_combined)
 # Write csv
 write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv", row.names = FALSE)
 
-# Reload the final result
-# DATE.TIME conversion
-result <- emission_combined %>%
-        mutate(
-                DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
-                analyzer = as.factor(analyzer),
-                day = as.factor(day)
-        )
-
-
 ######## Statistical Data Analysis #######
 # Define Variables
 vars <- c(
@@ -278,62 +290,14 @@ vars_base <- c(
 )
 
 # Descriptive statistics
-result_stat_summary <- stat_table(data = result, response_vars = vars, group_var = "analyzer")
+result_stat_summary <- stat_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
 write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
 
 # Tukey HSD
-result_HSD_summary <- HSD_table(data = result, response_vars = vars, group_var = "analyzer")
+result_HSD_summary <- HSD_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
 write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
-
-# Relative error
-result_err_summary <- relerror(data =result, gases = c("CO2", "CH4", "NH3"), reference = "CRDS.1")
-write_excel_csv(result_err_summary, "20250408_20250414_relerr_table.csv")
 
 
 ######## Data Visualization ########
-# Plot and save all variables from `vars` (from `result`)
-for (y_var in vars) {
-        y_sym <- sym(y_var)
-        plots <- emicon.plot(df = result, !!y_sym)
-        
-        for (day_name in names(plots)) {
-                plot_obj <- plots[[day_name]]
-                
-                # Show the plot in the viewer
-                print(plot_obj)
-                
-                # Save the plot
-                ggsave(
-                        filename = paste0(y_var, "_", day_name, ".png"),
-                        plot = plot_obj,
-                        width = 8, height = 5, dpi = 300
-                )
-                cat("Saved result plot:", paste0(y_var, "_", day_name, ".png"), "\n")
-        }
-}
-
-# Plot and save error variables from `result_err_summary` / `err_long`
-error_vars <- c(
-        paste0("e_", c("CO2", "CH4", "NH3"), "_err"),
-        paste0("delta_", c("CO2", "CH4", "NH3"), "_err")
-)
-
-for (y_var in error_vars) {
-        y_sym <- sym(y_var)
-        plots <- emicon.plot(df = err_long, !!y_sym)
-        
-        for (day_name in names(plots)) {
-                plot_obj <- plots[[day_name]]
-                
-                # Show the plot
-                print(plot_obj)
-                
-                # Save the plot
-                ggsave(
-                        filename = paste0(y_var, "_", day_name, ".png"),
-                        plot = plot_obj,
-                        width = 8, height = 5, dpi = 300
-                )
-                cat("Saved error plot:", paste0(y_var, "_", day_name, ".png"), "\n")
-        }
-}
+# Reshape the data
+result <-  reparam(emission_combined) 
