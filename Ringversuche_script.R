@@ -472,38 +472,39 @@ t.test(result$e_NH3_N, result$e_NH3_S, paired = TRUE)
 t.test(result$e_CH4_N, result$e_CH4_S, paired = TRUE)
 t.test(result$e_CO2_N, result$e_CO2_S, paired = TRUE)
 
-########## Calculate CV for individual analyzer ###########################
-stat_result <- result %>%
+########## Descriptive statistics ###########################
+vars <- c(
+        "CO2_in", "CH4_in", "NH3_in",
+        "CO2_N", "CH4_N", "NH3_N",
+        "CO2_S", "CH4_S", "NH3_S",
+        "Q_Vent_rate_N", "Q_Vent_rate_S",
+        "e_CO2_N", "e_CH4_N", "e_NH3_N",
+        "e_CO2_S", "e_CH4_S", "e_NH3_S",
+        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
+        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
+)
+
+stat_table <- result %>%
         group_by(analyzer) %>%
         summarise(
                 n = n(),  # Number of observations per group
                 across(
-                        c("CO2_in", "CO2_S", "CO2_N",
-                          "CH4_in", "CH4_S", "CH4_N",
-                          "NH3_in", "NH3_S", "NH3_N",
-                          "Q_Vent_rate_N", "Q_Vent_rate_S",
-                          "delta_NH3_N_ppm", "delta_CH4_N_ppm", "delta_CO2_N_ppm",
-                          "delta_NH3_S_ppm", "delta_CH4_S_ppm", "delta_CO2_S_ppm",
-                          "e_NH3_N", "e_CH4_N", "e_CO2_N",
-                          "e_NH3_S", "e_CH4_S", "e_CO2_S"),
+                        all_of(vars),
                         list(
                                 mean = ~mean(., na.rm = TRUE),
-                                median = ~median(., na.rm = TRUE),
                                 sd = ~sd(., na.rm = TRUE),
-                                cv = ~DescTools::CoefVar(., na.rm = TRUE)
+                                cv = ~DescTools::CoefVar(., na.rm = TRUE) * 100
                         ),
                         .names = "{.fn}_{.col}"
                 )
-        )
+        ) %>%
+        rename_with(~paste0(.x, " (ppm)"), 
+                    .cols = starts_with(c("mean_", "sd_"))) %>%
+        rename_with(~paste0(.x, " (%)"), 
+                    .cols = starts_with("cv_"))
 
-################ Tukey HSD by analyzer ######################
-# Example usage with your variables:
-vars <- c("CO2_in", "CO2_S", "CO2_N",
-          "CH4_in", "CH4_S", "CH4_N",
-          "NH3_in", "NH3_S", "NH3_N",
-          "e_NH3_N", "e_CH4_N", "e_CO2_N",
-          "e_NH3_S", "e_CH4_S", "e_CO2_S")
-
+################ Analysis of Significant Differences ######################
+# Tukey HSD by analyzer
 HSD_table <- HSD_matrix(data = result, response_vars = vars, group_var = "analyzer")
 
 # Save as CSV
