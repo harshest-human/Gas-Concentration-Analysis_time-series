@@ -13,6 +13,7 @@ library(magick)
 library(summarytools)
 library(rlang)
 library(DescTools)
+library(writexl)
 library(rstatix)
 
 
@@ -208,6 +209,55 @@ rm_outliers_IQR <- function(df, cols) {
         return(df)
 }
 
+
+# Development of function HSD_matrix
+HSD_matrix <- function(data, response_var, group_var) {
+        
+        #load libraries
+        library(dplyr)
+        library(tibble)
+        library(rstatix)
+        
+        # Run Tukey HSD test using rstatix
+        formula <- as.formula(paste(response_var, "~", group_var))
+        tukey_result <- data %>%
+                rstatix::tukey_hsd(formula)
+        
+        # Unique groups sorted
+        groups <- sort(unique(c(tukey_result$group1, tukey_result$group2)))
+        
+        # Initialize matrix filled with "-"
+        sig_matrix <- matrix("-", nrow = length(groups), ncol = length(groups),
+                             dimnames = list(groups, groups))
+        
+        # Fill upper triangle with significance labels
+        for (i in seq_len(nrow(tukey_result))) {
+                g1 <- tukey_result$group1[i]
+                g2 <- tukey_result$group2[i]
+                pval <- tukey_result$p.adj[i]
+                
+                if (which(groups == g1) < which(groups == g2)) {
+                        label <- dplyr::case_when(
+                                is.na(pval)    ~ "-",
+                                pval <= 0.001  ~ "≤ 0.001",
+                                pval <= 0.01   ~ "≤ 0.01",
+                                pval <= 0.05   ~ "≤ 0.05",
+                                TRUE           ~ "> 0.05"
+                        )
+                        sig_matrix[g1, g2] <- label
+                }
+        }
+        
+        # Diagonal already "-"
+        diag(sig_matrix) <- "-"
+        
+        # Convert matrix to tibble with grouping variable column
+        sig_df <- as.data.frame(sig_matrix) %>%
+                rownames_to_column(group_var) %>%
+                as_tibble()
+        
+        return(sig_df)
+}
 
 ######## Import Gas Data #########
 # Load animal and temperature data
@@ -434,7 +484,7 @@ t.test(result$e_NH3_N, result$e_NH3_S, paired = TRUE)
 t.test(result$e_CH4_N, result$e_CH4_S, paired = TRUE)
 t.test(result$e_CO2_N, result$e_CO2_S, paired = TRUE)
 
-########## Calculate CV for individual anaylzer ###########################
+########## Calculate CV for individual analyzer ###########################
 stat_result <- result %>%
         group_by(analyzer) %>%
         summarise(
@@ -459,37 +509,18 @@ stat_result <- result %>%
         )
 
 ################ Tukey HSD by analyzer ######################
-tukey_result <- result %>%
-        rstatix::tukey_hsd(CO2_in ~ analyzer)
+# Tukey HSD using rstatix (returns tidy data frame)
+CO2_in_HSD <- HSD_matrix(
+        data = result, 
+        response_var = "CO2_in", 
+        group_var = "analyzer")
 
-# Get all unique analyzers
-analyzers <- sort(unique(c(tukey_result$group1, tukey_result$group2)))
+CH4_in_HSD <- HSD_matrix(
+        data = result, 
+        response_var = "CH4_in", 
+        group_var = "analyzer")
 
-# Initialize empty matrix
-sig_matrix <- matrix(NA, nrow = length(analyzers), ncol = length(analyzers),
-                     dimnames = list(analyzers, analyzers))
-
-# Fill matrix with significance labels
-for (i in seq_len(nrow(tukey_result))) {
-        g1 <- tukey_result$group1[i]
-        g2 <- tukey_result$group2[i]
-        pval <- tukey_result$p.adj[i]
-        
-        label <- case_when(
-                is.na(pval)         ~ NA_character_,
-                pval <= 0.001       ~ "≤ 0.001",
-                pval <= 0.01        ~ "≤ 0.01",
-                pval <= 0.05        ~ "≤ 0.05",
-                pval > 0.05        ~ "> 0.05"
-        )
-        
-        sig_matrix[g1, g2] <- label
-        sig_matrix[g2, g1] <- label
-}
-
-# Set diagonal to "-"
-diag(sig_matrix) <- "-"
-
-# View result
-sig_matrix
-
+NH3_in_HSD <- HSD_matrix(
+        data = result, 
+        response_var = "NH3_in", 
+        group_var = "analyzer")
