@@ -337,6 +337,18 @@ emission_combined  <- indirect.CO2.balance(input_combined)
 write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv", row.names = FALSE)
 
 ######## Statistical Analysis ########
+# list variables
+vars <- c(
+        "CO2_in", "CH4_in", "NH3_in",
+        "CO2_N", "CH4_N", "NH3_N",
+        "CO2_S", "CH4_S", "NH3_S",
+        "Q_Vent_rate_N", "Q_Vent_rate_S",
+        "e_CO2_N", "e_CH4_N", "e_NH3_N",
+        "e_CO2_S", "e_CH4_S", "e_NH3_S",
+        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
+        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
+)
+
 # Descriptive statistics
 result_stat_summary <- stat_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
 write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
@@ -351,11 +363,64 @@ write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 emission_reshaped <-  reparam(emission_combined) 
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
-# Plotting
-emiconplot(data = emission_reshaped, 
-           variable = "NH3",
-           type_filter = "emission",
-           unit_filter = "g h^-1")
+# Emission plots (g h^-1)
+eNH3 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "NH3",
+        type_filter = "emission",
+        unit_filter = "g h^-1"
+)
 
+eCH4 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "CH4",
+        type_filter = "emission",
+        unit_filter = "g h^-1"
+)
+
+
+# Concentration plots (ppm)
+cNH3 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "NH3",
+        type_filter = "concentration",
+        unit_filter = "ppm"
+)
+
+cCH4 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "CH4",
+        type_filter = "concentration",
+        unit_filter = "ppm"
+)
+
+cCO2 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "CO2",
+        type_filter = "concentration",
+        unit_filter = "ppm"
+)
+
+# Delta plots (ppm)
+dNH3 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "NH3",
+        type_filter = "delta",
+        unit_filter = "ppm"
+)
+
+dCH4 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "CH4",
+        type_filter = "delta",
+        unit_filter = "ppm"
+)
+
+dCO2 <- emiconplot(
+        data = emission_reshaped, 
+        variable = "CO2",
+        type_filter = "delta",
+        unit_filter = "ppm"
+)
 
 
