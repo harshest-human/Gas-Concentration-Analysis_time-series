@@ -189,16 +189,7 @@ indirect.CO2.balance <- function(df) {
                         e_NH3_S = (delta_NH3_S_mgm3 * Q_Vent_rate_S) / 1000,
                         e_CH4_S = (delta_CH4_S_mgm3 * Q_Vent_rate_S) / 1000,
                         e_CO2_S = (delta_CO2_S_mgm3 * Q_Vent_rate_S) / 1000,
-                        
-                        # Annual emissions (tons/year), assuming constant emission rates
-                        e_NH3_N_per_year = e_NH3_N * 24 * 365 / 1000,
-                        e_CH4_N_per_year = e_CH4_N * 24 * 365 / 1000,
-                        e_CO2_N_per_year = e_CO2_N * 24 * 365 / 1000,
-                        
-                        e_NH3_S_per_year = e_NH3_S * 24 * 365 / 1000,
-                        e_CH4_S_per_year = e_CH4_S * 24 * 365 / 1000,
-                        e_CO2_S_per_year = e_CO2_S * 24 * 365 / 1000
-                )
+                        )
 }
 
 # Development of function rm_outliers_IQR
@@ -443,35 +434,27 @@ t.test(result$e_CH4_N, result$e_CH4_S, paired = TRUE)
 t.test(result$e_CO2_N, result$e_CO2_S, paired = TRUE)
 
 ########## Calculate CV for individual anaylzer ###########################
-final_cols <- c("DATE.TIME", "hour", "day", "analyzer",
-                "CO2_in", "CO2_S", "CO2_N",
-                "CH4_in", "CH4_S", "CH4_N",
-                "NH3_in", "NH3_S", "NH3_N",
-                "Q_Vent_rate_N", "Q_Vent_rate_S",
-                "delta_NH3_N_ppm", "delta_CH4_N_ppm", "delta_CO2_N_ppm",
-                "delta_NH3_S_ppm", "delta_CH4_S_ppm", "delta_CO2_S_ppm",
-                "e_NH3_N", "e_CH4_N", "e_CO2_N",
-                "e_NH3_S", "e_CH4_S", "e_CO2_S")
+stat_result <- result %>%
+        group_by(analyzer) %>%
+        summarise(
+                n = n(),  # Number of observations per group
+                across(
+                        c("CO2_in", "CO2_S", "CO2_N",
+                          "CH4_in", "CH4_S", "CH4_N",
+                          "NH3_in", "NH3_S", "NH3_N",
+                          "Q_Vent_rate_N", "Q_Vent_rate_S",
+                          "delta_NH3_N_ppm", "delta_CH4_N_ppm", "delta_CO2_N_ppm",
+                          "delta_NH3_S_ppm", "delta_CH4_S_ppm", "delta_CO2_S_ppm",
+                          "e_NH3_N", "e_CH4_N", "e_CO2_N",
+                          "e_NH3_S", "e_CH4_S", "e_CO2_S"),
+                        list(
+                                mean = ~mean(., na.rm = TRUE),
+                                median = ~median(., na.rm = TRUE),
+                                sd = ~sd(., na.rm = TRUE),
+                                cv = ~DescTools::CoefVar(., na.rm = TRUE)
+                        ),
+                        .names = "{.fn}_{.col}"
+                )
+        )
 
-cv_cols <- setdiff(final_cols, c("DATE.TIME", "hour", "day", "analyzer"))
 
-CRDS.1_CV <- result %>% filter(analyzer == "CRDS.1") %>% group_by(day) %>%
-        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
-
-CRDS.2_CV <- result %>% filter(analyzer == "CRDS.2") %>% group_by(day) %>%
-        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
-
-CRDS.3_CV <- result %>% filter(analyzer == "CRDS.3") %>% group_by(day) %>%
-        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
-
-FTIR.1_CV <- result %>% filter(analyzer == "FTIR.1") %>% group_by(day) %>%
-        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
-
-FTIR.2_CV <- result %>% filter(analyzer == "FTIR.2") %>% group_by(day) %>%
-        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
-
-FTIR.3_CV <- result %>% filter(analyzer == "FTIR.3") %>% group_by(day) %>%
-        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
-
-FTIR.4_CV <- result %>% filter(analyzer == "FTIR.4") %>% group_by(day) %>%
-        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
