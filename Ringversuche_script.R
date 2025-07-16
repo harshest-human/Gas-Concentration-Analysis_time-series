@@ -106,7 +106,6 @@ reparam <- function(data) {
         return(wide_gas_df)
 }
 
-
 # Development of indirect.CO2.balance function
 indirect.CO2.balance <- function(df) {
         df %>%
@@ -369,7 +368,7 @@ result_HSD_summary <- HSD_table(data = emission_combined, response_vars = vars, 
 write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 
-######## Data Visualization ########
+######## Trend Visualization ########
 # Reshape the data
 emission_reshaped <-  reparam(emission_combined) 
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
@@ -433,8 +432,8 @@ qVent <-  emiconplot(
         unit_filter = "m h^-1")
 
 
-# Create a named list of all your plots and desired filenames
-plots <- list(
+# Create a named list of all your plots and desired file names
+dailyplots <- list(
         eNH3   = eNH3,
         eCH4   = eCH4,
         cNH3   = cNH3,
@@ -443,14 +442,103 @@ plots <- list(
         dNH3   = dNH3,
         dCH4   = dCH4,
         dCO2   = dCO2,
-        qVent  = qVent
-)
+        qVent  = qVent)
 
 # Save each plot using ggsave
-for (plot_name in names(plots)) {
+for (plot_name in names(dailyplots)) {
         ggsave(
                 filename = paste0(plot_name, ".png"),
-                plot = plots[[plot_name]],
-                width = 10, height = 10, dpi = 300
+                plot = dailyplots[[plot_name]],
+                width = 10, height = 10, dpi = 300)
+}
+
+
+######## Stats Visualization ########
+# Concentration boxplots
+c_long <- emission_reshaped %>%
+        filter(type == "concentration", unit == "ppm") %>%
+        select(analyzer, location, CO2, CH4, NH3) %>%
+        pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
+        drop_na(concentration)
+
+c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
+        geom_boxplot() +
+        facet_grid(gas ~ location, scales = "free_y") + 
+        labs(title = "CO2, CH4 and NH3 Concentration by Analyzer and Location",
+             y = "(Concentration) [ppm]",
+             fill = "Analyzer") +
+        theme_bw() + theme(legend.position = "top")
+
+# Delta Boxplots 
+d_long <- emission_reshaped %>%
+        filter(type == "delta", unit == "ppm") %>%
+        select(analyzer, location, CO2, CH4, NH3) %>%
+        pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
+        drop_na(concentration)
+
+d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
+        geom_boxplot() +
+        facet_grid(gas ~ location, scales = "free_y") + 
+        labs(
+                title = expression("ΔCO"[2]*", ΔCH"[4]*" and ΔNH"[3]*" by Analyzer and Location"),
+                y = "Delta Concentration [ppm]",
+                fill = "Analyzer"
+        ) +
+        theme_bw() +
+        theme(legend.position = "top")
+
+# Emission Boxplots
+e_long <- emission_reshaped %>%
+        filter(type == "emission", unit == "g h^-1") %>%
+        select(analyzer, location, CH4, NH3) %>%
+        pivot_longer(cols = c(CH4, NH3), names_to = "gas", values_to = "emission") %>%
+        drop_na(emission)
+
+e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
+        geom_boxplot() +
+        facet_grid(gas ~ location, scales = "free_y") +
+        labs(
+                title = "Emissions of CH4 and NH3 by Analyzer and Location",
+                y = "Emission [g/h]",
+                fill = "Analyzer"
+        ) +
+        theme_bw() +
+        theme(legend.position = "top")
+
+
+# Ventilation rate Boxplots
+q_long <- emission_reshaped %>%
+        filter(type == "Ventilation rate", unit == "m h^-1") %>%
+        select(analyzer, location, Q) %>%   
+        drop_na(Q)
+
+q_boxplot <- ggplot(q_long, aes(x = analyzer, y = Q, fill = analyzer)) +
+        geom_boxplot() +
+        facet_wrap(~ location, scales = "free_y") +
+        labs(
+                title = "Ventilation Rate (Q) by Analyzer and Location",
+                y = "Ventilation Rate [m³/h]",
+                fill = "Analyzer"
+        ) +
+        theme_bw() +
+        theme(legend.position = "top")
+
+# Named list of plots with specific dimensions
+statplots <- list(
+        concentration_boxplot = list(plot = c_boxplot, width = 12, height = 10),
+        delta_boxplot         = list(plot = d_boxplot, width = 12, height = 10),
+        emission_boxplot      = list(plot = e_boxplot, width = 8, height = 6),
+        ventilation_boxplot   = list(plot = q_boxplot, width = 8,  height = 4)
+)
+
+# Save plots with their specific sizes
+for (plot_name in names(statplots)) {
+        ggsave(
+                filename = paste0(plot_name, ".png"),
+                plot     = statplots[[plot_name]]$plot,
+                width    = statplots[[plot_name]]$width,
+                height   = statplots[[plot_name]]$height,
+                dpi      = 300
         )
 }
+
