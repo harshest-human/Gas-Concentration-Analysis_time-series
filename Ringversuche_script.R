@@ -13,6 +13,7 @@ library(magick)
 library(summarytools)
 library(rlang)
 library(DescTools)
+library(rstatix)
 
 
 ######## Development of functions #######
@@ -457,4 +458,38 @@ stat_result <- result %>%
                 )
         )
 
+################ Tukey HSD by analyzer ######################
+tukey_result <- result %>%
+        rstatix::tukey_hsd(CO2_in ~ analyzer)
+
+# Get all unique analyzers
+analyzers <- sort(unique(c(tukey_result$group1, tukey_result$group2)))
+
+# Initialize empty matrix
+sig_matrix <- matrix(NA, nrow = length(analyzers), ncol = length(analyzers),
+                     dimnames = list(analyzers, analyzers))
+
+# Fill matrix with significance labels
+for (i in seq_len(nrow(tukey_result))) {
+        g1 <- tukey_result$group1[i]
+        g2 <- tukey_result$group2[i]
+        pval <- tukey_result$p.adj[i]
+        
+        label <- case_when(
+                is.na(pval)         ~ NA_character_,
+                pval <= 0.001       ~ "≤ 0.001",
+                pval <= 0.01        ~ "≤ 0.01",
+                pval <= 0.05        ~ "≤ 0.05",
+                pval > 0.05        ~ "> 0.05"
+        )
+        
+        sig_matrix[g1, g2] <- label
+        sig_matrix[g2, g1] <- label
+}
+
+# Set diagonal to "-"
+diag(sig_matrix) <- "-"
+
+# View result
+sig_matrix
 
