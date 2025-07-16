@@ -210,7 +210,7 @@ rm_outliers_IQR <- function(df, cols) {
 
 
 # Development of function stat_table
-stat_table <- function(data, response_vars, group_var = "analyzer") {
+stat_table <- function(data, response_vars, group_var) {
         # Load required libraries
         require(dplyr)
         require(DescTools)
@@ -274,6 +274,59 @@ HSD_table <- function(data, response_vars, group_var) {
 }
 
 
+# Development of function relerror_table
+relerror_table <- function(data, response_vars, reference) {
+        library(dplyr)
+        library(tidyr)
+        library(stringr)
+        
+        # Step 1: Select and average relevant columns
+        err <- data %>%
+                select(DATE.TIME, day, hour, analyzer, all_of(grep(paste0("^(", paste0(response_vars, collapse = "|"), ")_S"), names(.), value = TRUE))) %>%
+                group_by(DATE.TIME, day, hour, analyzer) %>%
+                summarise(across(everything(), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
+                pivot_wider(
+                        names_from = analyzer,
+                        values_from = -c(DATE.TIME, day, hour, analyzer),
+                        names_sep = "_"
+                ) %>%
+                rename_with(~str_remove_all(.x, "_S_ppm|_S"))
+        
+        # Step 2: Compute relative errors compared to the chosen reference analyzer
+        for (var in response_vars) {
+                crds_ref <- paste0(var, "_", reference)
+                col_matches <- grep(paste0("^", var, "_"), names(err), value = TRUE)
+                col_matches <- setdiff(col_matches, crds_ref)
+                
+                for (col in col_matches) {
+                        new_col <- paste0(col, "_err")
+                        err[[new_col]] <- 100 * (err[[col]] - err[[crds_ref]]) / err[[crds_ref]]
+                }
+                # Add self-reference for the chosen reference analyzer (0% error)
+                err[[paste0(crds_ref, "_err")]] <- 0
+        }
+        
+        # Step 3: Reshape to long format
+        err_long <- err %>%
+                select(DATE.TIME, day, hour, matches("_err$")) %>%
+                pivot_longer(
+                        cols = -c(DATE.TIME, day, hour),
+                        names_to = c("variable", "analyzer"),
+                        names_pattern = "(.*)_(FTIR\\.\\d|CRDS\\.\\d)_err"
+                ) %>%
+                mutate(variable = factor(variable, levels = unique(variable))) %>%
+                pivot_wider(
+                        id_cols = c(DATE.TIME, day, hour, analyzer),
+                        names_from = variable,
+                        values_from = value,
+                        names_glue = "{variable}_err"
+                ) %>%
+                mutate(analyzer = factor(analyzer, levels = unique(analyzer)))
+        
+        return(err_long)
+}
+
+
 ######## Import Gas Data #########
 # Load animal and temperature data
 animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
@@ -318,96 +371,6 @@ result <- emission_combined %>%
                 analyzer = as.factor(analyzer),
                 day = as.factor(day)
         )
-
-
-######## Calculate Relative percentage error #######
-err <- result %>%
-        select(
-                DATE.TIME, day, hour, analyzer,
-                delta_NH3_S_ppm, delta_CH4_S_ppm, delta_CO2_S_ppm,
-                e_NH3_S, e_CH4_S, e_CO2_S
-        ) %>%
-        group_by(DATE.TIME, day, hour, analyzer) %>%
-        summarise(
-                delta_NH3_S_ppm = mean(delta_NH3_S_ppm, na.rm = TRUE),
-                delta_CH4_S_ppm = mean(delta_CH4_S_ppm, na.rm = TRUE),
-                delta_CO2_S_ppm = mean(delta_CO2_S_ppm, na.rm = TRUE),
-                e_NH3_S = mean(e_NH3_S, na.rm = TRUE),
-                e_CH4_S = mean(e_CH4_S, na.rm = TRUE),
-                e_CO2_S = mean(e_CO2_S, na.rm = TRUE),
-                .groups = "drop"
-        ) %>%
-        pivot_wider(
-                names_from = analyzer,
-                values_from = c(delta_NH3_S_ppm, delta_CH4_S_ppm, delta_CO2_S_ppm,
-                                e_NH3_S, e_CH4_S, e_CO2_S),
-                names_sep = "_"
-        ) %>%
-        rename_with(~str_remove_all(.x, "_S_ppm|_S"))
-
-err <- err %>%
-        mutate(
-                # NH3 emissions
-                e_NH3_FTIR.1_err = 100 * (e_NH3_FTIR.1 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_FTIR.2_err = 100 * (e_NH3_FTIR.2 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_FTIR.3_err = 100 * (e_NH3_FTIR.3 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_FTIR.4_err = 100 * (e_NH3_FTIR.4 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_CRDS.1_err = 100 * (e_NH3_CRDS.1 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_CRDS.2_err = 100 * (e_NH3_CRDS.2 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                e_NH3_CRDS.3_err = 100 * (e_NH3_CRDS.3 - e_NH3_CRDS.1) / e_NH3_CRDS.1,
-                
-                # CH4 emissions
-                e_CH4_FTIR.1_err = 100 * (e_CH4_FTIR.1 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_FTIR.2_err = 100 * (e_CH4_FTIR.2 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_FTIR.3_err = 100 * (e_CH4_FTIR.3 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_FTIR.4_err = 100 * (e_CH4_FTIR.4 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_CRDS.1_err = 100 * (e_CH4_CRDS.1 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_CRDS.2_err = 100 * (e_CH4_CRDS.2 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                e_CH4_CRDS.3_err = 100 * (e_CH4_CRDS.3 - e_CH4_CRDS.1) / e_CH4_CRDS.1,
-                
-                # NH3 deltas
-                delta_NH3_FTIR.1_err = 100 * (delta_NH3_FTIR.1 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
-                delta_NH3_FTIR.2_err = 100 * (delta_NH3_FTIR.2 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
-                delta_NH3_FTIR.3_err = 100 * (delta_NH3_FTIR.3 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
-                delta_NH3_FTIR.4_err = 100 * (delta_NH3_FTIR.4 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
-                delta_NH3_CRDS.1_err = 100 * (delta_NH3_CRDS.1 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
-                delta_NH3_CRDS.2_err = 100 * (delta_NH3_CRDS.2 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
-                delta_NH3_CRDS.3_err = 100 * (delta_NH3_CRDS.3 - delta_NH3_CRDS.1) / delta_NH3_CRDS.1,
-                
-                # CH4 deltas
-                delta_CH4_FTIR.1_err = 100 * (delta_CH4_FTIR.1 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
-                delta_CH4_FTIR.2_err = 100 * (delta_CH4_FTIR.2 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
-                delta_CH4_FTIR.3_err = 100 * (delta_CH4_FTIR.3 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
-                delta_CH4_FTIR.4_err = 100 * (delta_CH4_FTIR.4 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
-                delta_CH4_CRDS.1_err = 100 * (delta_CH4_CRDS.1 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
-                delta_CH4_CRDS.2_err = 100 * (delta_CH4_CRDS.2 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
-                delta_CH4_CRDS.3_err = 100 * (delta_CH4_CRDS.3 - delta_CH4_CRDS.1) / delta_CH4_CRDS.1,
-                
-                # CO2 deltas
-                delta_CO2_FTIR.1_err = 100 * (delta_CO2_FTIR.1 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
-                delta_CO2_FTIR.2_err = 100 * (delta_CO2_FTIR.2 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
-                delta_CO2_FTIR.3_err = 100 * (delta_CO2_FTIR.3 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
-                delta_CO2_FTIR.4_err = 100 * (delta_CO2_FTIR.4 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
-                delta_CO2_CRDS.1_err = 100 * (delta_CO2_CRDS.1 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
-                delta_CO2_CRDS.2_err = 100 * (delta_CO2_CRDS.2 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1,
-                delta_CO2_CRDS.3_err = 100 * (delta_CO2_CRDS.3 - delta_CO2_CRDS.1) / delta_CO2_CRDS.1
-        )
-
-
-err_long <- err %>%
-        select(DATE.TIME, day, hour, matches("^(e_NH3|e_CH4|delta_NH3|delta_CH4|delta_CO2).*_err$")) %>%
-        pivot_longer(
-                cols = -c(DATE.TIME, day, hour),
-                names_to = c("gas", "analyzer"),
-                names_pattern = "(e_NH3|e_CH4|delta_NH3|delta_CH4|delta_CO2)_(FTIR\\.\\d|CRDS\\.\\d)_err"
-        ) %>%
-        pivot_wider(
-                id_cols = c(DATE.TIME, day, hour, analyzer),
-                names_from = gas,
-                values_from = value,
-                names_glue = "{gas}_err"
-        ) %>%
-        mutate(analyzer = factor(analyzer, levels = unique(analyzer)))
 
 
 ######## Data visualization (Grouped by day)############
@@ -486,20 +449,6 @@ for (y_var in y_vars_err) {
 
 
 ######## Statistical Data Analysis #######
-# Paired t-test between North and South delta NH3 (in ppm)
-t.test(result$delta_NH3_N_ppm, result$delta_NH3_S_ppm, paired = TRUE)
-t.test(result$delta_CH4_N_ppm, result$delta_CH4_S_ppm, paired = TRUE)
-t.test(result$delta_CO2_N_ppm, result$delta_CO2_S_ppm, paired = TRUE)
-
-# Paired t-tests for ventilation rate
-t.test(result$Q_Vent_rate_N, result$Q_Vent_rate_S, paired = TRUE)
-
-# Paired t-tests for emission
-t.test(result$e_NH3_N, result$e_NH3_S, paired = TRUE)
-t.test(result$e_CH4_N, result$e_CH4_S, paired = TRUE)
-t.test(result$e_CO2_N, result$e_CO2_S, paired = TRUE)
-
-########## Descriptive statistics ###########################
 vars <- c(
         "CO2_in", "CH4_in", "NH3_in",
         "CO2_N", "CH4_N", "NH3_N",
@@ -511,10 +460,22 @@ vars <- c(
         "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
 )
 
-# stat_table
+# Descriptive statistics
 result_stat_summary <- stat_table(data = result, response_vars = vars, group_var = "analyzer")
 write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
 
 # Tukey HSD
-result_HSD_table <- HSD_table(data = result, response_vars = vars, group_var = "analyzer")
-write_excel_csv(result_HSD_table, "20250408_20250414_HSD_table.csv")
+result_HSD_summary <- HSD_table(data = result, response_vars = vars, group_var = "analyzer")
+write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
+
+vars_base <- c(
+        "CO2", "CH4", "NH3",
+        "Q_Vent_rate",
+        "e_CO2", "e_CH4", "e_NH3",
+        "delta_CO2", "delta_CH4", "delta_NH3"
+)
+
+# relative error
+result_err_summary <- relerror_table(result, 
+                           response_vars = vars_base, 
+                           reference = "CRDS.1") 
