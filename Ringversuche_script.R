@@ -38,26 +38,35 @@ reparam <- function(data) {
         
         gas_cols <- grep(gas_pattern, names(data), value = TRUE)
         
-        if (length(gas_cols) == 0) {
-                stop("No gas-related columns matched. Please check column names or patterns.")
+        # Add ventilation columns
+        vent_cols <- c("Q_Vent_rate_N", "Q_Vent_rate_S")
+        all_cols <- c(meta_cols, gas_cols, vent_cols[vent_cols %in% names(data)])
+        
+        if (length(gas_cols) == 0 && !any(vent_cols %in% names(data))) {
+                stop("No gas-related or ventilation columns matched. Please check column names or patterns.")
         }
         
-        df <- data %>% select(all_of(meta_cols), all_of(gas_cols))
+        df <- data %>% select(all_of(all_cols))
         
         long_df <- df %>%
                 pivot_longer(
-                        cols = all_of(gas_cols),
+                        cols = -all_of(meta_cols),
                         names_to = "variable",
                         values_to = "value"
                 ) %>%
                 mutate(
-                        gas = str_extract(variable, "CO2|CH4|NH3"),
+                        gas = case_when(
+                                variable %in% vent_cols ~ "Q",
+                                TRUE ~ str_extract(variable, "CO2|CH4|NH3")
+                        ),
                         type = case_when(
                                 str_starts(variable, "e_") ~ "emission",
                                 str_starts(variable, "delta_") ~ "delta",
+                                variable %in% vent_cols ~ "Ventilation rate",
                                 TRUE ~ "concentration"
                         ),
                         unit = case_when(
+                                variable %in% vent_cols ~ "m h^-1",
                                 type == "emission" ~ "g h^-1",
                                 str_detect(variable, "_mgm3") ~ "mg m^-3",
                                 str_detect(variable, "_ppm") ~ "ppm",
@@ -78,7 +87,7 @@ reparam <- function(data) {
                         names_from = gas,
                         values_from = value
                 ) %>%
-                relocate(CO2, CH4, NH3, .after = unit) %>%
+                relocate(CO2, CH4, NH3, Q, .after = unit) %>%
                 mutate(
                         DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
                         day = as.factor(day),
@@ -90,11 +99,13 @@ reparam <- function(data) {
                         unit = as.factor(unit),
                         CO2 = as.numeric(CO2),
                         CH4 = as.numeric(CH4),
-                        NH3 = as.numeric(NH3)
+                        NH3 = as.numeric(NH3),
+                        Q = as.numeric(Q)
                 )
         
         return(wide_gas_df)
 }
+
 
 # Development of indirect.CO2.balance function
 indirect.CO2.balance <- function(df) {
