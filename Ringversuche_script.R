@@ -373,6 +373,39 @@ result <- emission_combined %>%
         )
 
 
+######## Statistical Data Analysis #######
+vars <- c(
+        "CO2_in", "CH4_in", "NH3_in",
+        "CO2_N", "CH4_N", "NH3_N",
+        "CO2_S", "CH4_S", "NH3_S",
+        "Q_Vent_rate_N", "Q_Vent_rate_S",
+        "e_CO2_N", "e_CH4_N", "e_NH3_N",
+        "e_CO2_S", "e_CH4_S", "e_NH3_S",
+        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
+        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
+)
+
+# Descriptive statistics
+result_stat_summary <- stat_table(data = result, response_vars = vars, group_var = "analyzer")
+write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
+
+# Tukey HSD
+result_HSD_summary <- HSD_table(data = result, response_vars = vars, group_var = "analyzer")
+write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
+
+vars_base <- c(
+        "CO2", "CH4", "NH3",
+        "Q_Vent_rate",
+        "e_CO2", "e_CH4", "e_NH3",
+        "delta_CO2", "delta_CH4", "delta_NH3"
+)
+
+# relative error
+result_err_summary <- relerror_table(result, 
+                           response_vars = vars_base, 
+                           reference = "CRDS.1") 
+
+
 ######## Data visualization (Grouped by day)############
 # Concentration plots in ppm
 emicon.plot(df = result, delta_NH3_N_ppm)
@@ -393,7 +426,7 @@ emicon.plot(df = result, e_NH3_N)
 emicon.plot(df = result, e_NH3_S)
 
 # Error plots
-emicon.plot(err_long, e_NH3_err)
+emicon.plot(result_err_summary, e_NH3_err)
 emicon.plot(err_long, e_CH4_err)
 emicon.plot(err_long, delta_CO2_err)
 emicon.plot(err_long, delta_NH3_err)
@@ -446,36 +479,3 @@ for (y_var in y_vars_err) {
                 cat("Saved error plot:", paste0("day_", y_var, "_", day_name, ".png"), "\n")
         }
 }
-
-
-######## Statistical Data Analysis #######
-vars <- c(
-        "CO2_in", "CH4_in", "NH3_in",
-        "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S",
-        "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "e_CO2_N", "e_CH4_N", "e_NH3_N",
-        "e_CO2_S", "e_CH4_S", "e_NH3_S",
-        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
-        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
-)
-
-# Descriptive statistics
-result_stat_summary <- stat_table(data = result, response_vars = vars, group_var = "analyzer")
-write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
-
-# Tukey HSD
-result_HSD_summary <- HSD_table(data = result, response_vars = vars, group_var = "analyzer")
-write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
-
-vars_base <- c(
-        "CO2", "CH4", "NH3",
-        "Q_Vent_rate",
-        "e_CO2", "e_CH4", "e_NH3",
-        "delta_CO2", "delta_CH4", "delta_NH3"
-)
-
-# relative error
-result_err_summary <- relerror_table(result, 
-                           response_vars = vars_base, 
-                           reference = "CRDS.1") 
