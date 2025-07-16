@@ -448,6 +448,7 @@ c_long <- emission_reshaped %>%
 
 c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
         geom_boxplot(outliers = FALSE) +
+        stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_grid(gas ~ location, scales = "free_y") + 
         labs(title = "CO2, CH4 and NH3 Concentration by Analyzer and Location",
              y = "(Concentration) [ppm]",
@@ -463,12 +464,11 @@ d_long <- emission_reshaped %>%
 
 d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
         geom_boxplot(outliers = FALSE) +
+        stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_grid(gas ~ location, scales = "free_y") + 
-        labs(
-                title = expression("Delta concetrations of CO2, CH4, and NH3 by Analyzer and Location"),
-                y = "(Delta Concentration) [ppm]",
-                fill = "Analyzer"
-        ) +
+        labs(title = expression("Delta concetrations of CO2, CH4, and NH3 by Analyzer and Location"),
+             y = "(Delta Concentration) [ppm]",
+             fill = "Analyzer") +
         theme_bw() +
         theme(legend.position = "top")
 
@@ -481,12 +481,10 @@ e_long <- emission_reshaped %>%
 
 e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
         geom_boxplot(outliers = FALSE) +
+        stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_grid(gas ~ location, scales = "free_y") +
-        labs(
-                title = "Emissions of CH4 and NH3 by Analyzer and Location",
-                y = "Emission [g/h]",
-                fill = "Analyzer"
-        ) +
+        labs(title = "Emissions of CH4 and NH3 by Analyzer and Location",
+             fill = "Analyzer") +
         theme_bw() +
         theme(legend.position = "top")
 
@@ -499,12 +497,11 @@ q_long <- emission_reshaped %>%
 
 q_boxplot <- ggplot(q_long, aes(x = analyzer, y = Q, fill = analyzer)) +
         geom_boxplot(outlier.shape = NA) + 
+        stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_wrap(~ location) +
-        labs(
-                title = "Ventilation Rate (Q) by Analyzer and Location",
-                y = "Ventilation Rate [m³/h]",
-                fill = "Analyzer"
-        ) +
+        labs(title = "Ventilation Rate (Q) by Analyzer and Location",
+             y = "Ventilation Rate [m³/h]",
+             fill = "Analyzer") +
         theme_bw() +
         theme(legend.position = "top")
 
