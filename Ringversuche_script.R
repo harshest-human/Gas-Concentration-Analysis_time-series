@@ -17,125 +17,7 @@ library(rstatix)
 
 
 ######## Development of functions #######
-# Analyzer color and fill mappings
-analyzer_colors <- c(
-        "FTIR.1" = "#1b9e77",
-        "FTIR.2" = "#d95f02",
-        "FTIR.3" = "#e7298a", 
-        "FTIR.4" = "#7570b3",
-        "CRDS.1" = "#66a61e",
-        "CRDS.2" = "#e6ab02",
-        "CRDS.3" = "#a6761d"
-)
 
-# Background side labels
-bg <- list(
-        N = "(computed by North side)",
-        S = "(computed by South side)"
-)
-
-# Per year suffix
-py <- list(per_year = "per year")
-
-# Function to generate plotmath labels
-get_plot_label <- function(varname) {
-        # Updated regex: optional type, gas, side, with suffix including err
-        match <- regexec("^(e|delta|Q_Vent_rate)?_?(CH4|CO2|NH3)?_?(N|S)?(?:_(ppm|mgm3|per_year|err))?$", varname)
-        parts <- regmatches(varname, match)[[1]]
-        
-        if (length(parts) == 0) return(varname)
-        
-        type <- parts[2]
-        gas <- parts[3]
-        side <- parts[4]
-        suffix <- parts[5]
-        
-        gas_expr <- switch(gas,
-                           CH4 = quote(CH[4]),
-                           CO2 = quote(CO[2]),
-                           NH3 = quote(NH[3]),
-                           NULL
-        )
-        
-        # Label for different types
-        label <- switch(type,
-                        e = bquote(.(gas_expr)~"Emission (g·h"^{-1}*")"),
-                        delta = if (!is.null(suffix) && suffix %in% c("ppm", "mgm3")) {
-                                if (suffix == "ppm") {
-                                        bquote(Delta*.(gas_expr)~"(ppm)")
-                                } else if (suffix == "mgm3") {
-                                        bquote(Delta*.(gas_expr)~"(mg·m"^{-3}*")")
-                                }
-                        } else {
-                                bquote(Delta*.(gas_expr))  # delta with no suffix
-                        },
-                        Q_Vent_rate = bquote("Ventilation rate (m"^3*"/h)"),
-                        NULL
-        )
-        
-        # Handle error suffix for *any* type or even if type is NULL
-        if (!is.null(suffix) && suffix == "err") {
-                if (!is.null(gas_expr)) {
-                        label <- bquote("Relative error of "*.(gas_expr)*" (%)")
-                } else {
-                        label <- "Relative error (%)"
-                }
-        }
-        
-        # Add background side label if present
-        if (!is.null(side) && nzchar(side)) {
-                label <- bquote(.(label)~.(bg[[side]]))
-        }
-        
-        # Add per_year suffix label
-        if (!is.null(suffix) && suffix == "per_year") {
-                label <- bquote(.(label)~.(py[["per_year"]]))
-        }
-        
-        return(label)
-}
-
-# Emission and Concentration plotting function
-emicon.plot <- function(df, y) {
-        y_var <- enquo(y)
-        y_str <- as_label(y_var)
-        y_label <- get_plot_label(y_str)
-        
-        plots <- list()
-        day_list <- unique(df$day)
-        
-        for (d in day_list) {
-                df_day <- df[df$day == d, ]
-                
-                p <- ggline(
-                        df_day, x = "hour", y = y_str,
-                        add = "mean_se",
-                        color = "analyzer",
-                        palette = analyzer_colors
-                ) +
-                        labs(
-                                title = paste("Day:", d),
-                                x = "Hour of Day",
-                                y = y_label,
-                                color = "Analyzer",
-                                fill = "Analyzer"
-                        ) +
-                        scale_x_continuous(breaks = 0:23) +
-                        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
-                        theme_light() +
-                        theme(
-                                axis.text.x = element_text(angle = 0),
-                                axis.title.y = element_text(size = 10),
-                                plot.title = element_text(hjust = 0.5),
-                                legend.position = "right",
-                                plot.caption = element_text(size = 10, hjust = 0.5)
-                        )
-                
-                plots[[as.character(d)]] <- p
-        }
-        
-        return(plots)
-}
 
 # Development of indirect.CO2.balance function
 indirect.CO2.balance <- function(df) {
@@ -274,56 +156,58 @@ HSD_table <- function(data, response_vars, group_var) {
 }
 
 
-# Development of function relerror_table
-relerror_table <- function(data, response_vars, reference) {
+# Development of function relerror
+relerror <- function(data, gases, reference) {
         library(dplyr)
         library(tidyr)
         library(stringr)
         
-        # Step 1: Select and average relevant columns
-        err <- data %>%
-                select(DATE.TIME, day, hour, analyzer, all_of(grep(paste0("^(", paste0(response_vars, collapse = "|"), ")_S"), names(.), value = TRUE))) %>%
-                group_by(DATE.TIME, day, hour, analyzer) %>%
-                summarise(across(everything(), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
-                pivot_wider(
-                        names_from = analyzer,
-                        values_from = -c(DATE.TIME, day, hour, analyzer),
-                        names_sep = "_"
-                ) %>%
-                rename_with(~str_remove_all(.x, "_S_ppm|_S"))
+        vars_base <- c(gases, "Q_Vent_rate")
         
-        # Step 2: Compute relative errors compared to the chosen reference analyzer
-        for (var in response_vars) {
-                crds_ref <- paste0(var, "_", reference)
-                col_matches <- grep(paste0("^", var, "_"), names(err), value = TRUE)
-                col_matches <- setdiff(col_matches, crds_ref)
-                
-                for (col in col_matches) {
-                        new_col <- paste0(col, "_err")
-                        err[[new_col]] <- 100 * (err[[col]] - err[[crds_ref]]) / err[[crds_ref]]
-                }
-                # Add self-reference for the chosen reference analyzer (0% error)
-                err[[paste0(crds_ref, "_err")]] <- 0
+        build_patterns <- function(g) {
+                c(
+                        paste0("^", g, "(_in|_N|_S)?$"),
+                        paste0("^delta_", g, "(_N|_S)(_ppm|_mgm3)?$"),
+                        paste0("^e_", g, "(_N|_S)?$")
+                )
         }
         
-        # Step 3: Reshape to long format
-        err_long <- err %>%
-                select(DATE.TIME, day, hour, matches("_err$")) %>%
-                pivot_longer(
-                        cols = -c(DATE.TIME, day, hour),
-                        names_to = c("variable", "analyzer"),
-                        names_pattern = "(.*)_(FTIR\\.\\d|CRDS\\.\\d)_err"
-                ) %>%
-                mutate(variable = factor(variable, levels = unique(variable))) %>%
-                pivot_wider(
-                        id_cols = c(DATE.TIME, day, hour, analyzer),
-                        names_from = variable,
-                        values_from = value,
-                        names_glue = "{variable}_err"
-                ) %>%
-                mutate(analyzer = factor(analyzer, levels = unique(analyzer)))
+        all_patterns <- unlist(lapply(vars_base, build_patterns))
         
-        return(err_long)
+        selected_vars <- unique(unlist(
+                lapply(all_patterns, function(p) grep(p, names(data), value = TRUE))
+        ))
+        
+        needed_cols <- c("DATE.TIME", "day", "hour", "analyzer", selected_vars)
+        
+        # Average values by grouping metadata and analyzer (still keeping analyzer in grouping)
+        err <- data %>%
+                select(all_of(needed_cols)) %>%
+                group_by(DATE.TIME, day, hour, analyzer) %>%
+                summarise(across(all_of(selected_vars), ~ mean(.x, na.rm = TRUE)), .groups = "drop")
+        
+        # Now compute errors without pivoting (keep analyzer column separate)
+        
+        # Get reference rows (for chosen analyzer)
+        ref_data <- err %>% filter(analyzer == reference) %>% select(-analyzer)
+        
+        # Join err data with ref_data by DATE.TIME, day, hour
+        err_joined <- err %>%
+                filter(analyzer != reference) %>%
+                left_join(ref_data, by = c("DATE.TIME", "day", "hour"), suffix = c("", "_ref"))
+        
+        # For each selected_var compute relative error compared to *_ref
+        for (var in selected_vars) {
+                err_joined[[paste0(var, "_err")]] <- 100 * (err_joined[[var]] - err_joined[[paste0(var, "_ref")]]) / err_joined[[paste0(var, "_ref")]]
+        }
+        
+        # Keep original columns plus error columns
+        error_cols <- paste0(selected_vars, "_err")
+        
+        result <- err_joined %>%
+                select(DATE.TIME, day, hour, analyzer, all_of(selected_vars), all_of(error_cols))
+        
+        return(result)
 }
 
 
@@ -355,7 +239,7 @@ write.csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv", ro
 
 ######## Computation of ventilation rates and emissions #########
 # Convert DATE.TIME format
-input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 10:00:00")
+input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 10:10:00")
 
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
@@ -374,6 +258,7 @@ result <- emission_combined %>%
 
 
 ######## Statistical Data Analysis #######
+# Define Variables
 vars <- c(
         "CO2_in", "CH4_in", "NH3_in",
         "CO2_N", "CH4_N", "NH3_N",
@@ -381,8 +266,15 @@ vars <- c(
         "Q_Vent_rate_N", "Q_Vent_rate_S",
         "e_CO2_N", "e_CH4_N", "e_NH3_N",
         "e_CO2_S", "e_CH4_S", "e_NH3_S",
-        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
-        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
+        "delta_CO2_N_mgm3", "delta_CH4_N_mgm3", "delta_NH3_N_mgm3",
+        "delta_CO2_S_mgm3", "delta_CH4_S_mgm3", "delta_NH3_S_mgm3"
+)
+
+vars_base <- c(
+        "CO2", "CH4", "NH3",
+        "Q_Vent_rate",
+        "e_CO2", "e_CH4", "e_NH3",
+        "delta_CO2", "delta_CH4", "delta_NH3"
 )
 
 # Descriptive statistics
@@ -393,89 +285,55 @@ write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
 result_HSD_summary <- HSD_table(data = result, response_vars = vars, group_var = "analyzer")
 write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
-vars_base <- c(
-        "CO2", "CH4", "NH3",
-        "Q_Vent_rate",
-        "e_CO2", "e_CH4", "e_NH3",
-        "delta_CO2", "delta_CH4", "delta_NH3"
-)
-
-# relative error
-result_err_summary <- relerror_table(result, 
-                           response_vars = vars_base, 
-                           reference = "CRDS.1") 
+# Relative error
+result_err_summary <- relerror(data =result, gases = c("CO2", "CH4", "NH3"), reference = "CRDS.1")
+write_excel_csv(result_err_summary, "20250408_20250414_relerr_table.csv")
 
 
-######## Data visualization (Grouped by day)############
-# Concentration plots in ppm
-emicon.plot(df = result, delta_NH3_N_ppm)
-emicon.plot(df = result, delta_NH3_S_ppm)
-emicon.plot(df = result, delta_CH4_N_ppm)
-emicon.plot(df = result, delta_CH4_S_ppm)
-emicon.plot(df = result, delta_CO2_N_ppm)
-emicon.plot(df = result, delta_CO2_S_ppm)
-
-# Ventilation rate plots
-emicon.plot(df = result, Q_Vent_rate_N)
-emicon.plot(df = result, Q_Vent_rate_S)
-
-# Emission plots
-emicon.plot(df = result, e_CH4_N)
-emicon.plot(df = result, e_CH4_S)
-emicon.plot(df = result, e_NH3_N)
-emicon.plot(df = result, e_NH3_S)
-
-# Error plots
-emicon.plot(result_err_summary, e_NH3_err)
-emicon.plot(err_long, e_CH4_err)
-emicon.plot(err_long, delta_CO2_err)
-emicon.plot(err_long, delta_NH3_err)
-emicon.plot(err_long, delta_CH4_err)
-
-
-######## Save all plots ############
-# Variables for 'result' dataframe
-y_vars_result <- c(
-        "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "delta_NH3_N_ppm", "delta_NH3_S_ppm",
-        "delta_CH4_N_ppm", "delta_CH4_S_ppm",
-        "delta_CO2_N_ppm", "delta_CO2_S_ppm",
-        "e_CH4_N", "e_CH4_S", "e_NH3_N", "e_NH3_S"
-)
-
-# Variables for 'err_long' dataframe (error plots)
-y_vars_err <- c(
-        "e_NH3_err","e_CH4_err",
-        "delta_CO2_err", "delta_NH3_err", "delta_CH4_err"
-)
-
-
-# Save result plots
-for (y_var in y_vars_result) {
+######## Data Visualization ########
+# Plot and save all variables from `vars` (from `result`)
+for (y_var in vars) {
         y_sym <- sym(y_var)
         plots <- emicon.plot(df = result, !!y_sym)
         
         for (day_name in names(plots)) {
+                plot_obj <- plots[[day_name]]
+                
+                # Show the plot in the viewer
+                print(plot_obj)
+                
+                # Save the plot
                 ggsave(
-                        filename = paste0("day_", y_var, "_", day_name, ".png"),
-                        plot = plots[[day_name]],
+                        filename = paste0(y_var, "_", day_name, ".png"),
+                        plot = plot_obj,
                         width = 8, height = 5, dpi = 300
                 )
-                cat("Saved result plot:", paste0("day_", y_var, "_", day_name, ".png"), "\n")
+                cat("Saved result plot:", paste0(y_var, "_", day_name, ".png"), "\n")
         }
 }
 
-# Save error plots
-for (y_var in y_vars_err) {
+# Plot and save error variables from `result_err_summary` / `err_long`
+error_vars <- c(
+        paste0("e_", c("CO2", "CH4", "NH3"), "_err"),
+        paste0("delta_", c("CO2", "CH4", "NH3"), "_err")
+)
+
+for (y_var in error_vars) {
         y_sym <- sym(y_var)
         plots <- emicon.plot(df = err_long, !!y_sym)
         
         for (day_name in names(plots)) {
+                plot_obj <- plots[[day_name]]
+                
+                # Show the plot
+                print(plot_obj)
+                
+                # Save the plot
                 ggsave(
-                        filename = paste0("day_", y_var, "_", day_name, ".png"),
-                        plot = plots[[day_name]],
+                        filename = paste0(y_var, "_", day_name, ".png"),
+                        plot = plot_obj,
                         width = 8, height = 5, dpi = 300
                 )
-                cat("Saved error plot:", paste0("day_", y_var, "_", day_name, ".png"), "\n")
+                cat("Saved error plot:", paste0(y_var, "_", day_name, ".png"), "\n")
         }
 }
