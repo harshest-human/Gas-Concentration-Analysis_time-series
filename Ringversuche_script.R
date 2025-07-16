@@ -162,21 +162,6 @@ indirect.CO2.balance <- function(df) {
                         )
 }
 
-# Development of function rm_outliers_IQR
-rm_outliers_IQR <- function(df, cols) {
-        for (col in cols) {
-                Q1 <- quantile(df[[col]], 0.25, na.rm = TRUE)
-                Q3 <- quantile(df[[col]], 0.75, na.rm = TRUE)
-                IQR_val <- Q3 - Q1
-                lower <- Q1 - 1.5 * IQR_val
-                upper <- Q3 + 1.5 * IQR_val
-                
-                # Replace outliers with NA (or any flag value)
-                df[[col]] <- ifelse(df[[col]] < lower | df[[col]] > upper, NA, df[[col]])
-        }
-        return(df)
-}
-
 # Development of function stat_table
 stat_table <- function(data, response_vars, group_var) {
         # Load required libraries
