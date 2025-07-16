@@ -12,6 +12,7 @@ library(gridExtra)
 library(magick)
 library(summarytools)
 library(rlang)
+library(DescTools)
 
 
 ######## Development of functions #######
@@ -94,52 +95,45 @@ get_plot_label <- function(varname) {
 }
 
 # Emission and Concentration plotting function
-emicon.plot <- function(df, x, y) {
-        x_var <- enquo(x)
+emicon.plot <- function(df, y) {
         y_var <- enquo(y)
-        x_str <- as_label(x_var)
         y_str <- as_label(y_var)
-        
-        # Get math label for y axis
         y_label <- get_plot_label(y_str)
         
-        # Base plot
-        p <- ggline(
-                df, x = x_str, y = y_str,
-                add = "mean_se",
-                color = "analyzer",
-                palette = analyzer_colors
-        ) +
-                labs(
-                        x = x_str,
-                        y = y_label,
-                        color = "Analyzer",
-                        fill = "Analyzer"
+        plots <- list()
+        day_list <- unique(df$day)
+        
+        for (d in day_list) {
+                df_day <- df[df$day == d, ]
+                
+                p <- ggline(
+                        df_day, x = "hour", y = y_str,
+                        add = "mean_se",
+                        color = "analyzer",
+                        palette = analyzer_colors
                 ) +
-                scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
-                theme_light() +
-                theme(
-                        legend.position = "right",
-                        axis.title.y = element_text(size = 10),
-                        plot.title = element_blank(),
-                        plot.caption = element_text(size = 10, hjust = 0.5)
-                )
-        
-        # If x is datetime, add datetime scale and rotate labels
-        if (inherits(df[[x_str]], "POSIXct") || inherits(df[[x_str]], "POSIXt")) {
-                p <- p +
-                        scale_x_datetime(date_breaks = "6 hours", date_labels = "%d.%m %H:%M") +
-                        theme(axis.text.x = element_text(angle = 45, hjust = 1))
-        }
-        
-        # If x = "hour" (numeric from 0 to 23), set breaks for every hour
-        if (x_str == "hour") {
-                p <- p + 
+                        labs(
+                                title = paste("Day:", d),
+                                x = "Hour of Day",
+                                y = y_label,
+                                color = "Analyzer",
+                                fill = "Analyzer"
+                        ) +
                         scale_x_continuous(breaks = 0:23) +
-                        theme(axis.text.x = element_text(angle = 0))
+                        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+                        theme_light() +
+                        theme(
+                                axis.text.x = element_text(angle = 0),
+                                axis.title.y = element_text(size = 10),
+                                plot.title = element_text(hjust = 0.5),
+                                legend.position = "right",
+                                plot.caption = element_text(size = 10, hjust = 0.5)
+                        )
+                
+                plots[[as.character(d)]] <- p
         }
         
-        return(p)
+        return(plots)
 }
 
 # Development of indirect.CO2.balance function
@@ -251,7 +245,7 @@ write.csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv", ro
 
 ######## Computation of ventilation rates and emissions #########
 # Convert DATE.TIME format
-input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 23:00:00")
+input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 12:00:00")
 
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
@@ -361,56 +355,29 @@ err_long <- err %>%
 
 ######## Data visualization (Grouped by day)############
 # Concentration plots in ppm
-emicon.plot(df = result, x = day, y = delta_NH3_N_ppm)
-emicon.plot(df = result, x = day, y = delta_NH3_S_ppm)
-emicon.plot(df = result, x = day, y = delta_CH4_N_ppm)
-emicon.plot(df = result, x = day, y = delta_CH4_S_ppm)
-emicon.plot(df = result, x = day, y = delta_CO2_N_ppm)
-emicon.plot(df = result, x = day, y = delta_CO2_S_ppm)
+emicon.plot(df = result, delta_NH3_N_ppm)
+emicon.plot(df = result, delta_NH3_S_ppm)
+emicon.plot(df = result, delta_CH4_N_ppm)
+emicon.plot(df = result, delta_CH4_S_ppm)
+emicon.plot(df = result, delta_CO2_N_ppm)
+emicon.plot(df = result, delta_CO2_S_ppm)
 
 # Ventilation rate plots
-emicon.plot(df = result, x = day, y = Q_Vent_rate_N)
-emicon.plot(df = result, x = day, y = Q_Vent_rate_S)
+emicon.plot(df = result, Q_Vent_rate_N)
+emicon.plot(df = result, Q_Vent_rate_S)
 
 # Emission plots
-emicon.plot(df = result, x = day, y = e_CH4_N)
-emicon.plot(df = result, x = day, y = e_CH4_S)
-emicon.plot(df = result, x = day, y = e_NH3_N)
-emicon.plot(df = result, x = day, y = e_NH3_S)
+emicon.plot(df = result, e_CH4_N)
+emicon.plot(df = result, e_CH4_S)
+emicon.plot(df = result, e_NH3_N)
+emicon.plot(df = result, e_NH3_S)
 
 # Error plots
-emicon.plot(err_long, x = day, y = e_NH3_err)
-emicon.plot(err_long, x = day, y = e_CH4_err)
-emicon.plot(err_long, x = day, y = delta_CO2_err)
-emicon.plot(err_long, x = day, y = delta_NH3_err)
-emicon.plot(err_long, x = day, y = delta_CH4_err)
-
-
-######## Data visualization (Grouped by hour)############
-# Concentration plots in ppm
-emicon.plot(df = result, x = hour, y = delta_NH3_N_ppm)
-emicon.plot(df = result, x = hour, y = delta_NH3_S_ppm)
-emicon.plot(df = result, x = hour, y = delta_CH4_N_ppm)
-emicon.plot(df = result, x = hour, y = delta_CH4_S_ppm)
-emicon.plot(df = result, x = hour, y = delta_CO2_N_ppm)
-emicon.plot(df = result, x = hour, y = delta_CO2_S_ppm)
-
-# Ventilation rate plots
-emicon.plot(df = result, x = hour, y = Q_Vent_rate_N)
-emicon.plot(df = result, x = hour, y = Q_Vent_rate_S)
-
-# Emission plots
-emicon.plot(df = result, x = hour, y = e_CH4_N)
-emicon.plot(df = result, x = hour, y = e_CH4_S)
-emicon.plot(df = result, x = hour, y = e_NH3_N)
-emicon.plot(df = result, x = hour, y = e_NH3_S)
-
-# Error plots
-emicon.plot(err_long, x = hour, y = e_NH3_err)
-emicon.plot(err_long, x = hour, y = e_CH4_err)
-emicon.plot(err_long, x = hour, y = delta_CO2_err)
-emicon.plot(err_long, x = hour, y = delta_NH3_err)
-emicon.plot(err_long, x = hour, y = delta_CH4_err)
+emicon.plot(err_long, e_NH3_err)
+emicon.plot(err_long, e_CH4_err)
+emicon.plot(err_long, delta_CO2_err)
+emicon.plot(err_long, delta_NH3_err)
+emicon.plot(err_long, delta_CH4_err)
 
 
 ######## Save all plots ############
@@ -420,9 +387,6 @@ y_vars_result <- c(
         "delta_NH3_N_ppm", "delta_NH3_S_ppm",
         "delta_CH4_N_ppm", "delta_CH4_S_ppm",
         "delta_CO2_N_ppm", "delta_CO2_S_ppm",
-        "delta_NH3_N_mgm3", "delta_NH3_S_mgm3",
-        "delta_CH4_N_mgm3", "delta_CH4_S_mgm3",
-        "delta_CO2_N_mgm3", "delta_CO2_S_mgm3",
         "e_CH4_N", "e_CH4_S", "e_NH3_N", "e_NH3_S"
 )
 
@@ -433,34 +397,34 @@ y_vars_err <- c(
 )
 
 
-# Save all plots as png
+# Save result plots
 for (y_var in y_vars_result) {
         y_sym <- sym(y_var)
-        p <- emicon.plot(df = result, x = hour, y = !!y_sym)
-        ggsave(filename = paste0("hour_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
-        cat("Saved result plot:", paste0("hour_", y_var, ".png"), "\n")
+        plots <- emicon.plot(df = result, !!y_sym)
+        
+        for (day_name in names(plots)) {
+                ggsave(
+                        filename = paste0("day_", y_var, "_", day_name, ".png"),
+                        plot = plots[[day_name]],
+                        width = 8, height = 5, dpi = 300
+                )
+                cat("Saved result plot:", paste0("day_", y_var, "_", day_name, ".png"), "\n")
+        }
 }
 
-for (y_var in y_vars_result) {
-        y_sym <- sym(y_var)
-        p <- emicon.plot(df = result, x = day, y = !!y_sym)
-        ggsave(filename = paste0("day_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
-        cat("Saved result plot:", paste0("day_", y_var, ".png"), "\n")
-}
-
-
+# Save error plots
 for (y_var in y_vars_err) {
         y_sym <- sym(y_var)
-        p <- emicon.plot(df = err_long, x = hour, y = !!y_sym)
-        ggsave(filename = paste0("hour_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
-        cat("Saved error plot:", paste0("hour_", y_var, ".png"), "\n")
-}
-
-for (y_var in y_vars_err) {
-        y_sym <- sym(y_var)
-        p <- emicon.plot(df = err_long, x = day, y = !!y_sym)
-        ggsave(filename = paste0("day_", y_var, ".png"), plot = p, width = 8, height = 5, dpi = 300)
-        cat("Saved error plot:", paste0("day_", y_var, ".png"), "\n")
+        plots <- emicon.plot(df = err_long, !!y_sym)
+        
+        for (day_name in names(plots)) {
+                ggsave(
+                        filename = paste0("day_", y_var, "_", day_name, ".png"),
+                        plot = plots[[day_name]],
+                        width = 8, height = 5, dpi = 300
+                )
+                cat("Saved error plot:", paste0("day_", y_var, "_", day_name, ".png"), "\n")
+        }
 }
 
 
@@ -477,3 +441,37 @@ t.test(result$Q_Vent_rate_N, result$Q_Vent_rate_S, paired = TRUE)
 t.test(result$e_NH3_N, result$e_NH3_S, paired = TRUE)
 t.test(result$e_CH4_N, result$e_CH4_S, paired = TRUE)
 t.test(result$e_CO2_N, result$e_CO2_S, paired = TRUE)
+
+########## Calculate CV for individual anaylzer ###########################
+final_cols <- c("DATE.TIME", "hour", "day", "analyzer",
+                "CO2_in", "CO2_S", "CO2_N",
+                "CH4_in", "CH4_S", "CH4_N",
+                "NH3_in", "NH3_S", "NH3_N",
+                "Q_Vent_rate_N", "Q_Vent_rate_S",
+                "delta_NH3_N_ppm", "delta_CH4_N_ppm", "delta_CO2_N_ppm",
+                "delta_NH3_S_ppm", "delta_CH4_S_ppm", "delta_CO2_S_ppm",
+                "e_NH3_N", "e_CH4_N", "e_CO2_N",
+                "e_NH3_S", "e_CH4_S", "e_CO2_S")
+
+cv_cols <- setdiff(final_cols, c("DATE.TIME", "hour", "day", "analyzer"))
+
+CRDS.1_CV <- result %>% filter(analyzer == "CRDS.1") %>% group_by(day) %>%
+        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
+
+CRDS.2_CV <- result %>% filter(analyzer == "CRDS.2") %>% group_by(day) %>%
+        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
+
+CRDS.3_CV <- result %>% filter(analyzer == "CRDS.3") %>% group_by(day) %>%
+        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
+
+FTIR.1_CV <- result %>% filter(analyzer == "FTIR.1") %>% group_by(day) %>%
+        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
+
+FTIR.2_CV <- result %>% filter(analyzer == "FTIR.2") %>% group_by(day) %>%
+        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
+
+FTIR.3_CV <- result %>% filter(analyzer == "FTIR.3") %>% group_by(day) %>%
+        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
+
+FTIR.4_CV <- result %>% filter(analyzer == "FTIR.4") %>% group_by(day) %>%
+        summarise(across(all_of(cv_cols), ~CV(., na.rm=TRUE), .names = "CV_{.col}"))
