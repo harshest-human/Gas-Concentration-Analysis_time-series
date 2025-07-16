@@ -66,7 +66,7 @@ reparam <- function(data) {
                                 TRUE ~ "concentration"
                         ),
                         unit = case_when(
-                                variable %in% vent_cols ~ "m h^-1",
+                                variable %in% vent_cols ~ "m^3 h^-1",
                                 type == "emission" ~ "g h^-1",
                                 str_detect(variable, "_mgm3") ~ "mg m^-3",
                                 str_detect(variable, "_ppm") ~ "ppm",
@@ -414,7 +414,7 @@ qVent <-  emiconplot(
         data = emission_reshaped, 
         variable = "Q",
         type_filter = "Ventilation rate",
-        unit_filter = "m h^-1")
+        unit_filter = "m^3 h^-1")
 
 
 # Create a named list of all your plots and desired file names
@@ -493,7 +493,7 @@ e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
 
 # Ventilation rate Boxplots
 q_long <- emission_reshaped %>%
-        filter(type == "Ventilation rate", unit == "m h^-1") %>%
+        filter(type == "Ventilation rate", unit == "m^3 h^-1") %>%
         select(analyzer, location, Q) %>%
         drop_na(Q)
 
