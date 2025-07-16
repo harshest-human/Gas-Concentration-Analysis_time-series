@@ -17,7 +17,7 @@ library(rstatix)
 
 
 ######## Development of functions #######
-# reshape parameters
+# Development of function reshape parameters
 reparam <- function(data) {
         library(dplyr)
         library(tidyr)
@@ -167,7 +167,6 @@ rm_outliers_IQR <- function(df, cols) {
         return(df)
 }
 
-
 # Development of function stat_table
 stat_table <- function(data, response_vars, group_var) {
         # Load required libraries
@@ -193,7 +192,6 @@ stat_table <- function(data, response_vars, group_var) {
                 rename_with(~paste0(.x, " (ppm)"), .cols = starts_with(c("mean_", "sd_"))) %>%
                 rename_with(~paste0(.x, " (%)"),       .cols = starts_with("cv_"))
 }
-
 
 # Development of function HSD_table
 HSD_table <- function(data, response_vars, group_var) {
@@ -232,6 +230,75 @@ HSD_table <- function(data, response_vars, group_var) {
         return(combined)
 }
 
+# Development of function emission and concentration plot
+emiconplot <- function(data, variable, type_filter = NULL, unit_filter = NULL) {
+        library(dplyr)
+        library(ggplot2)
+        library(scales)
+        
+        # Ensure 'day' is Date class
+        if ("day" %in% names(data)) {
+                if (!inherits(data$day, "Date")) {
+                        data <- data %>% mutate(day = as.Date(as.character(day)))
+                }
+        } else {
+                stop("Data must have a 'day' column for faceting.")
+        }
+        
+        # Filter by type if specified
+        if (!is.null(type_filter) && "type" %in% names(data)) {
+                data <- data %>% filter(type == type_filter)
+        }
+        
+        # Filter by unit if specified
+        if (!is.null(unit_filter) && "unit" %in% names(data)) {
+                data <- data %>% filter(unit == unit_filter)
+        }
+        
+        # Check variable exists
+        if (!variable %in% names(data)) {
+                stop(paste("Variable", variable, "not found in data"))
+        }
+        
+        # Summarize mean and SE by day, hour, location, analyzer
+        summary_data <- data %>%
+                group_by(day, hour, location, analyzer) %>%
+                summarise(
+                        mean_val = mean(.data[[variable]], na.rm = TRUE),
+                        se_val = sd(.data[[variable]], na.rm = TRUE) / sqrt(sum(!is.na(.data[[variable]]))),
+                        .groups = "drop"
+                )
+        
+        analyzer_colors <- c(
+                "FTIR.1" = "#1b9e77",
+                "FTIR.2" = "#d95f02",
+                "FTIR.3" = "#e7298a", 
+                "FTIR.4" = "#7570b3",
+                "CRDS.1" = "#66a61e",
+                "CRDS.2" = "#e6ab02",
+                "CRDS.3" = "#a6761d"
+        )
+        
+        y_label <- variable
+        if (!is.null(type_filter)) y_label <- paste0(y_label, " (", type_filter, ")")
+        if (!is.null(unit_filter)) y_label <- paste0(y_label, " [", unit_filter, "]")
+        
+        p <- ggplot(summary_data, aes(x = hour, y = mean_val, color = analyzer, group = analyzer)) +
+                geom_line() +
+                geom_point(size = 1) +
+                scale_color_manual(values = analyzer_colors) +
+                labs(
+                        x = "Hour",
+                        y = y_label,
+                        color = "Analyzer"
+                ) +
+                scale_y_continuous(breaks = pretty_breaks(n = 10)) +
+                facet_grid(day ~ location, scales = "free_x") +
+                theme_bw()
+        
+        print(p)
+}
+
 
 ######## Import Gas Data #########
 # Load animal and temperature data
@@ -261,7 +328,7 @@ write.csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv", ro
 
 ######## Computation of ventilation rates and emissions #########
 # Convert DATE.TIME format
-input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 10:10:00")
+input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 10:00:00")
 
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
@@ -269,26 +336,7 @@ emission_combined  <- indirect.CO2.balance(input_combined)
 # Write csv
 write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv", row.names = FALSE)
 
-######## Statistical Data Analysis #######
-# Define Variables
-vars <- c(
-        "CO2_in", "CH4_in", "NH3_in",
-        "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S",
-        "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "e_CO2_N", "e_CH4_N", "e_NH3_N",
-        "e_CO2_S", "e_CH4_S", "e_NH3_S",
-        "delta_CO2_N_mgm3", "delta_CH4_N_mgm3", "delta_NH3_N_mgm3",
-        "delta_CO2_S_mgm3", "delta_CH4_S_mgm3", "delta_NH3_S_mgm3"
-)
-
-vars_base <- c(
-        "CO2", "CH4", "NH3",
-        "Q_Vent_rate",
-        "e_CO2", "e_CH4", "e_NH3",
-        "delta_CO2", "delta_CH4", "delta_NH3"
-)
-
+######## Statistical Analysis ########
 # Descriptive statistics
 result_stat_summary <- stat_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
 write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
@@ -300,4 +348,14 @@ write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 ######## Data Visualization ########
 # Reshape the data
-result <-  reparam(emission_combined) 
+emission_reshaped <-  reparam(emission_combined) 
+write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
+
+# Plotting
+emiconplot(data = emission_reshaped, 
+           variable = "NH3",
+           type_filter = "emission",
+           unit_filter = "g h^-1")
+
+
+
