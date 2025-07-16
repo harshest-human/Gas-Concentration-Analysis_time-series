@@ -379,15 +379,13 @@ eNH3 <- emiconplot(
         data = emission_reshaped, 
         variable = "NH3",
         type_filter = "emission",
-        unit_filter = "g h^-1"
-)
+        unit_filter = "g h^-1")
 
 eCH4 <- emiconplot(
         data = emission_reshaped, 
         variable = "CH4",
         type_filter = "emission",
-        unit_filter = "g h^-1"
-)
+        unit_filter = "g h^-1")
 
 
 # Concentration plots (ppm)
@@ -395,43 +393,64 @@ cNH3 <- emiconplot(
         data = emission_reshaped, 
         variable = "NH3",
         type_filter = "concentration",
-        unit_filter = "ppm"
-)
+        unit_filter = "ppm")
 
 cCH4 <- emiconplot(
         data = emission_reshaped, 
         variable = "CH4",
         type_filter = "concentration",
-        unit_filter = "ppm"
-)
+        unit_filter = "ppm")
 
 cCO2 <- emiconplot(
         data = emission_reshaped, 
         variable = "CO2",
         type_filter = "concentration",
-        unit_filter = "ppm"
-)
+        unit_filter = "ppm")
 
 # Delta plots (ppm)
 dNH3 <- emiconplot(
         data = emission_reshaped, 
         variable = "NH3",
         type_filter = "delta",
-        unit_filter = "ppm"
-)
+        unit_filter = "ppm")
 
 dCH4 <- emiconplot(
         data = emission_reshaped, 
         variable = "CH4",
         type_filter = "delta",
-        unit_filter = "ppm"
-)
+        unit_filter = "ppm")
 
 dCO2 <- emiconplot(
         data = emission_reshaped, 
         variable = "CO2",
         type_filter = "delta",
-        unit_filter = "ppm"
+        unit_filter = "ppm")
+
+qVent <-  emiconplot(
+        data = emission_reshaped, 
+        variable = "Q",
+        type_filter = "Ventilation rate",
+        unit_filter = "m h^-1")
+
+
+# Create a named list of all your plots and desired filenames
+plots <- list(
+        eNH3   = eNH3,
+        eCH4   = eCH4,
+        cNH3   = cNH3,
+        cCH4   = cCH4,
+        cCO2   = cCO2,
+        dNH3   = dNH3,
+        dCH4   = dCH4,
+        dCO2   = dCO2,
+        qVent  = qVent
 )
 
-
+# Save each plot using ggsave
+for (plot_name in names(plots)) {
+        ggsave(
+                filename = paste0(plot_name, ".png"),
+                plot = plots[[plot_name]],
+                width = 10, height = 10, dpi = 300
+        )
+}
