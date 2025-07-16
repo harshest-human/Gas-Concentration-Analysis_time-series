@@ -13,7 +13,6 @@ library(magick)
 library(summarytools)
 library(rlang)
 library(DescTools)
-library(writexl)
 library(rstatix)
 
 
@@ -211,53 +210,42 @@ rm_outliers_IQR <- function(df, cols) {
 
 
 # Development of function HSD_matrix
-HSD_matrix <- function(data, response_var, group_var) {
+HSD_matrix <- function(data, response_vars, group_var) {
         
-        #load libraries
-        library(dplyr)
-        library(tibble)
-        library(rstatix)
-        
-        # Run Tukey HSD test using rstatix
-        formula <- as.formula(paste(response_var, "~", group_var))
-        tukey_result <- data %>%
-                rstatix::tukey_hsd(formula)
-        
-        # Unique groups sorted
-        groups <- sort(unique(c(tukey_result$group1, tukey_result$group2)))
-        
-        # Initialize matrix filled with "-"
-        sig_matrix <- matrix("-", nrow = length(groups), ncol = length(groups),
-                             dimnames = list(groups, groups))
-        
-        # Fill upper triangle with significance labels
-        for (i in seq_len(nrow(tukey_result))) {
-                g1 <- tukey_result$group1[i]
-                g2 <- tukey_result$group2[i]
-                pval <- tukey_result$p.adj[i]
+        # Helper function to get labeled Tukey results for one variable
+        get_tukey_labels <- function(var) {
+                formula <- as.formula(paste(var, "~", group_var))
+                tukey_res <- rstatix::tukey_hsd(data, formula)
                 
-                if (which(groups == g1) < which(groups == g2)) {
-                        label <- dplyr::case_when(
-                                is.na(pval)    ~ "-",
-                                pval <= 0.001  ~ "≤ 0.001",
-                                pval <= 0.01   ~ "≤ 0.01",
-                                pval <= 0.05   ~ "≤ 0.05",
-                                TRUE           ~ "> 0.05"
-                        )
-                        sig_matrix[g1, g2] <- label
-                }
+                # Add label column with significance categories
+                tukey_res <- tukey_res %>%
+                        mutate(label = case_when(
+                                is.na(p.adj) ~ "-",
+                                p.adj <= 0.001 ~ "≤ 0.001",
+                                p.adj <= 0.01 ~ "≤ 0.01",
+                                p.adj <= 0.05 ~ "≤ 0.05",
+                                TRUE ~ "> 0.05"
+                        )) %>%
+                        select(group1, group2, label) %>%
+                        rename(!!var := label)
+                
+                return(tukey_res)
         }
         
-        # Diagonal already "-"
-        diag(sig_matrix) <- "-"
+        # Get results for all variables as a list of data frames
+        results_list <- lapply(response_vars, get_tukey_labels)
         
-        # Convert matrix to tibble with grouping variable column
-        sig_df <- as.data.frame(sig_matrix) %>%
-                rownames_to_column(group_var) %>%
-                as_tibble()
+        # Join all by group1 and group2 (pair of analyzers)
+        combined <- Reduce(function(x, y) full_join(x, y, by = c("group1", "group2")), results_list)
         
-        return(sig_df)
+        # Arrange and rename grouping columns
+        combined <- combined %>%
+                arrange(group1, group2) %>%
+                rename(analyzer.1 = group1, analyzer.2 = group2)
+        
+        return(combined)
 }
+
 
 ######## Import Gas Data #########
 # Load animal and temperature data
@@ -509,18 +497,14 @@ stat_result <- result %>%
         )
 
 ################ Tukey HSD by analyzer ######################
-# Tukey HSD using rstatix (returns tidy data frame)
-CO2_in_HSD <- HSD_matrix(
-        data = result, 
-        response_var = "CO2_in", 
-        group_var = "analyzer")
+# Example usage with your variables:
+vars <- c("CO2_in", "CO2_S", "CO2_N",
+          "CH4_in", "CH4_S", "CH4_N",
+          "NH3_in", "NH3_S", "NH3_N",
+          "e_NH3_N", "e_CH4_N", "e_CO2_N",
+          "e_NH3_S", "e_CH4_S", "e_CO2_S")
 
-CH4_in_HSD <- HSD_matrix(
-        data = result, 
-        response_var = "CH4_in", 
-        group_var = "analyzer")
+HSD_table <- HSD_matrix(data = result, response_vars = vars, group_var = "analyzer")
 
-NH3_in_HSD <- HSD_matrix(
-        data = result, 
-        response_var = "NH3_in", 
-        group_var = "analyzer")
+# Save as CSV
+write_excel_csv(HSD_table, "20250408_20250414_HSD_analyzer_table.csv")
