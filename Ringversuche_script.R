@@ -236,7 +236,7 @@ write.csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv", ro
 
 ######## Computation of ventilation rates and emissions #########
 # Convert DATE.TIME format
-input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 12:00:00")
+input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 10:00:00")
 
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
