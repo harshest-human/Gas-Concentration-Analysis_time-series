@@ -164,10 +164,8 @@ indirect.CO2.balance <- function(df) {
 
 # Development of function stat_table
 stat_table <- function(data, response_vars, group_var) {
-        # Load required libraries
         require(dplyr)
         require(DescTools)
-        require(tidyselect)
         
         data %>%
                 group_by(.data[[group_var]]) %>%
@@ -176,17 +174,16 @@ stat_table <- function(data, response_vars, group_var) {
                         across(
                                 all_of(response_vars),
                                 list(
-                                        mean = ~mean(., na.rm = TRUE),
-                                        sd   = ~sd(., na.rm = TRUE),
-                                        cv   = ~DescTools::CoefVar(., na.rm = TRUE) * 100
+                                        mean = ~round(mean(., na.rm = TRUE), 2),
+                                        sd   = ~round(sd(., na.rm = TRUE), 2),
+                                        cv   = ~round(DescTools::CoefVar(., na.rm = TRUE) * 100, 2)
                                 ),
                                 .names = "{.fn}_{.col}"
                         ),
                         .groups = "drop"
-                ) %>%
-                rename_with(~paste0(.x, " (ppm)"), .cols = starts_with(c("mean_", "sd_"))) %>%
-                rename_with(~paste0(.x, " (%)"),       .cols = starts_with("cv_"))
+                )
 }
+
 
 # Development of function HSD_table
 HSD_table <- function(data, response_vars, group_var) {
@@ -267,8 +264,8 @@ emiconplot <- function(data, variable, type_filter = NULL, unit_filter = NULL) {
         analyzer_colors <- c(
                 "FTIR.1" = "#1b9e77",
                 "FTIR.2" = "#d95f02",
-                "FTIR.3" = "#e7298a", 
-                "FTIR.4" = "#7570b3",
+                "FTIR.3" = "#7570b3", 
+                "FTIR.4" = "#e7298a",
                 "CRDS.1" = "#66a61e",
                 "CRDS.2" = "#e6ab02",
                 "CRDS.3" = "#a6761d"
@@ -302,8 +299,8 @@ animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
 # Read and convert DATE.TIME for FTIR data
 ATB_FTIR <- read.csv("20250408-15_long_ATB_FTIR.1.csv")
 LUFA_FTIR <- read.csv("20250408-15_long_LUFA_FTIR.2.csv")
-ANECO_FTIR <- read.csv("20250408-15_long_ANECO_FTIR.3.csv")
-MBBM_FTIR <- read.csv("20250408-15_long_MBBM_FTIR.4.csv")
+MBBM_FTIR <- read.csv("20250408-15_long_MBBM_FTIR.3.csv")
+ANECO_FTIR <- read.csv("20250408-15_long_ANECO_FTIR.4.csv")
 
 # Read and convert DATE.TIME for CRDS data
 ATB_CRDS <- read.csv("20250408-15_long_ATB_CRDS.1.csv")
@@ -333,20 +330,37 @@ write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.cs
 
 ######## Statistical Analysis ########
 # list variables
-vars <- c(
+cvars <- c(
         "CO2_in", "CH4_in", "NH3_in",
         "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S",
-        "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "e_CO2_N", "e_CH4_N", "e_NH3_N",
-        "e_CO2_S", "e_CH4_S", "e_NH3_S",
+        "CO2_S", "CH4_S", "NH3_S"
+)
+
+dvars <- c(
         "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
         "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
 )
 
+evars <- c(
+        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S"
+)
+
+qvars <- c(
+        "Q_Vent_rate_N", "Q_Vent_rate_S"
+)
+
 # Descriptive statistics
-result_stat_summary <- stat_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
-write_excel_csv(result_stat_summary, "20250408_20250414_stat_table.csv")
+c_stat_summary <- stat_table(data = emission_combined, response_vars = cvars, group_var = "analyzer")
+write_excel_csv(c_stat_summary, "cstattable.csv")
+
+d_stat_summary <- stat_table(data = emission_combined, response_vars = dvars, group_var = "analyzer")
+write_excel_csv(d_stat_summary, "dstattable.csv")
+
+e_stat_summary <- stat_table(data = emission_combined, response_vars = evars, group_var = "analyzer")
+write_excel_csv(e_stat_summary, "estattable.csv")
+
+q_stat_summary <- stat_table(data = emission_combined, response_vars = qvars, group_var = "analyzer")
+write_excel_csv(q_stat_summary, "qstattable.csv")
 
 # Tukey HSD
 result_HSD_summary <- HSD_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
