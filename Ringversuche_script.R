@@ -524,3 +524,35 @@ for (plot_name in names(statplots)) {
         )
 }
 
+########## Correlograms ##############
+# Change pivot to wide
+eNH3_matrix <- emission_combined %>%
+        select(DATE.TIME, analyzer, e_NH3_N) %>%
+        pivot_wider(names_from = analyzer, values_from = e_NH3_N)
+
+# Remove DATE.Time column
+eNH3_matrix <- eNH3_matrix %>% select(-DATE.TIME)
+
+# Compute correlation matrix (pairwise complete to allow NAs)
+eNH3_matrix <- cor(eNH3_matrix, use = "pairwise.complete.obs")
+
+# Plot the correlogram
+ggcorrplot(eNH3_matrix, method = "circle", type = "lower", lab = TRUE,
+           title = "Correlation of e_NH3_N Across Analyzers")
+
+
+# Change pivot to wide
+eCH4_matrix <- emission_combined %>%
+        select(DATE.TIME, analyzer, e_CH4_N) %>%
+        pivot_wider(names_from = analyzer, values_from = e_CH4_N)
+
+# Remove DATE.Time column
+eCH4_matrix <- eCH4_matrix %>% select(-DATE.TIME)
+
+# Compute correlation matrix (pairwise complete to allow NAs)
+eCH4_matrix <- cor(eCH4_matrix, use = "pairwise.complete.obs")
+
+# Plot the correlogram
+ggcorrplot(eCH4_matrix, method = "circle", type = "lower", lab = TRUE,
+           title = "Correlation of e_CH4_N Across Analyzers")
+
