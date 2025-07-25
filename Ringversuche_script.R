@@ -15,6 +15,7 @@ library(rlang)
 library(DescTools)
 library(rstatix)
 library(ggcorrplot)
+library(networkD3)
 
 ######## Development of functions #######
 # Development of function reshape parameters
@@ -600,3 +601,81 @@ ggcorrplot(eCH4_matrix, method = "circle", type = "lower", lab = TRUE,
 
 result <- stat_table(emission_reshaped, c("CO2", "CH4", "NH3", "Q"), c("type", "location"))
 
+
+
+################# Sankey diagram ##############
+# Create nodes dataframe for all unique nodes (conc, ventilation, emission)
+conc_nodes <- c_stat_sum %>%
+        mutate(node = paste0("Conc ", gas, " (", location, ")")) %>%
+        distinct(node)
+
+vent_nodes <- q_stat_sum %>%
+        mutate(node = paste0("Ventilation rate (", location, ")")) %>%
+        distinct(node)
+
+emiss_nodes <- e_stat_sum %>%
+        mutate(node = paste0("Emission ", gas, " (", location, ")")) %>%
+        distinct(node)
+
+# Combine all nodes and assign zero-based IDs
+nodes <- bind_rows(conc_nodes, vent_nodes, emiss_nodes) %>%
+        distinct() %>%
+        mutate(id = row_number() - 1)
+
+# Helper function to get node ID
+node_id <- function(x) nodes$id[match(x, nodes$node)]
+
+# Create links from concentration CV to ventilation rate CV by location and gas
+
+# Because ventilation rate is not gas-specific, average concentration CVs per location (across gases)
+conc_cv_by_location <- c_stat_sum %>%
+        group_by(location) %>%
+        summarise(mean_cv_conc = mean(cv_concentration, na.rm = TRUE))
+
+vent_cv_by_location <- q_stat_sum %>%
+        select(location, cv_Q) %>%
+        distinct()
+
+# Link conc -> ventilation
+conc_to_vent <- conc_cv_by_location %>%
+        left_join(vent_cv_by_location, by = "location") %>%
+        rowwise() %>%
+        mutate(
+                source = node_id(paste0("Conc CO2 (", location, ")")),  # pick a representative gas node for source
+                target = node_id(paste0("Ventilation rate (", location, ")")),
+                value = mean_cv_conc
+        ) %>%
+        filter(!is.na(source), !is.na(target)) %>%
+        select(source, target, value)
+
+# Create links from ventilation rate CV to emission CV by location and gas
+# For emission, keep separate gas nodes
+
+vent_to_emiss <- e_stat_sum %>%
+        rowwise() %>%
+        mutate(
+                source = node_id(paste0("Ventilation rate (", location, ")")),
+                target = node_id(paste0("Emission ", gas, " (", location, ")")),
+                value = cv_emission
+        ) %>%
+        filter(!is.na(source), !is.na(target)) %>%
+        select(source, target, value)
+
+# Combine all links
+links <- bind_rows(conc_to_vent, vent_to_emiss)
+
+# Remove links with NA or zero values
+links <- links %>% filter(!is.na(value) & value > 0)
+
+# Create Sankey Diagram
+networkD3::sankeyNetwork(
+        Links = links,
+        Nodes = nodes,
+        Source = "source",
+        Target = "target",
+        Value = "value",
+        NodeID = "node",
+        fontSize = 12,
+        nodeWidth = 30,
+        sinksRight = FALSE
+)
