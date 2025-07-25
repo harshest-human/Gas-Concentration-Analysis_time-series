@@ -14,7 +14,7 @@ library(summarytools)
 library(rlang)
 library(DescTools)
 library(rstatix)
-
+library(ggcorrplot)
 
 ######## Development of functions #######
 # Development of function reshape parameters
@@ -163,12 +163,12 @@ indirect.CO2.balance <- function(df) {
 }
 
 # Development of function stat_table
-stat_table <- function(data, response_vars, group_var) {
+stat_table <- function(data, response_vars, group_vars) {
         require(dplyr)
         require(DescTools)
         
         data %>%
-                group_by(.data[[group_var]]) %>%
+                group_by(across(all_of(group_vars))) %>%
                 summarise(
                         n = n(),
                         across(
@@ -349,18 +349,15 @@ qvars <- c(
         "Q_Vent_rate_N", "Q_Vent_rate_S"
 )
 
-# Descriptive statistics
-c_stat_summary <- stat_table(data = emission_combined, response_vars = cvars, group_var = "analyzer")
-write_excel_csv(c_stat_summary, "cstattable.csv")
-
-d_stat_summary <- stat_table(data = emission_combined, response_vars = dvars, group_var = "analyzer")
-write_excel_csv(d_stat_summary, "dstattable.csv")
-
-e_stat_summary <- stat_table(data = emission_combined, response_vars = evars, group_var = "analyzer")
-write_excel_csv(e_stat_summary, "estattable.csv")
-
-q_stat_summary <- stat_table(data = emission_combined, response_vars = qvars, group_var = "analyzer")
-write_excel_csv(q_stat_summary, "qstattable.csv")
+vars <- c(
+        "CO2_in", "CH4_in", "NH3_in",
+        "CO2_N", "CH4_N", "NH3_N",
+        "CO2_S", "CH4_S", "NH3_S",
+        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
+        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm",
+        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
+        "Q_Vent_rate_N", "Q_Vent_rate_S"
+        )
 
 # Tukey HSD
 result_HSD_summary <- HSD_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
@@ -446,78 +443,107 @@ dailyplots <- list(
 # Save each plot using ggsave
 for (plot_name in names(dailyplots)) {
         ggsave(
-                filename = paste0(plot_name, ".png"),
+                filename = paste0(plot_name, ".pdf"),
                 plot = dailyplots[[plot_name]],
-                width = 10, height = 10, dpi = 300)
+                width = 14, height = 12, dpi = 600)
 }
 
 
 ######## Stats Visualization ########
-# Concentration boxplots
+# Concentration long
 c_long <- emission_reshaped %>%
         filter(type == "concentration", unit == "ppm") %>%
-        select(analyzer, location, CO2, CH4, NH3) %>%
+        select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
         pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
         drop_na(concentration)
+
+# Calculate mean, sd and cv
+c_stat_sum <- stat_table(c_long, response_vars = "concentration", group_var = c("analyzer", "location", "gas"))
+
 
 c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
         geom_boxplot(outliers = FALSE) +
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_grid(gas ~ location, scales = "free_y") + 
-        labs(title = "CO2, CH4 and NH3 Concentration by Analyzer and Location",
+        labs(title = "CO2, CH4 and NH3 Mean Concentration by Analyzer and Location",
              y = "(Concentration) [ppm]",
              fill = "Analyzer") +
         theme_bw() + theme(legend.position = "top")
 
-# Delta Boxplots 
+# Delta long
 d_long <- emission_reshaped %>%
         filter(type == "delta", unit == "ppm") %>%
-        select(analyzer, location, CO2, CH4, NH3) %>%
+        select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
         pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
         drop_na(concentration)
 
+# Calculate mean, sd, and cv for delta concentrations
+d_stat_sum <- stat_table(d_long, response_vars = "concentration", group_var = c("analyzer", "location", "gas"))
+
+# Boxplot for delta concentrations
 d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
         geom_boxplot(outliers = FALSE) +
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_grid(gas ~ location, scales = "free_y") + 
-        labs(title = expression("Delta concetrations of CO2, CH4, and NH3 by Analyzer and Location"),
-             y = "(Delta Concentration) [ppm]",
-             fill = "Analyzer") +
+        labs(
+                title = "Delta Concentrations of CO2, CH4, and NH3 by Analyzer and Location",
+                y = "(Delta Concentration) [ppm]",
+                fill = "Analyzer"
+        ) +
         theme_bw() +
         theme(legend.position = "top")
 
-# Emission Boxplots
+# Emission long
 e_long <- emission_reshaped %>%
         filter(type == "emission", unit == "g h^-1") %>%
-        select(analyzer, location, CH4, NH3) %>%
+        select(DATE.TIME, analyzer, location, CH4, NH3) %>%
         pivot_longer(cols = c(CH4, NH3), names_to = "gas", values_to = "emission") %>%
         drop_na(emission)
 
+# Calculate mean, sd, and cv for emissions
+e_stat_sum <- stat_table(e_long, response_vars = "emission", group_var = c("analyzer", "location", "gas"))
+
+# Boxplot for emissions
 e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
         geom_boxplot(outliers = FALSE) +
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_grid(gas ~ location, scales = "free_y") +
-        labs(title = "Emissions of CH4 and NH3 by Analyzer and Location",
-             fill = "Analyzer") +
+        labs(
+                title = "Emissions of CH4 and NH3 by Analyzer and Location",
+                fill = "Analyzer"
+        ) +
         theme_bw() +
         theme(legend.position = "top")
 
 
-# Ventilation rate Boxplots
+# Ventilation rate long
 q_long <- emission_reshaped %>%
         filter(type == "Ventilation rate", unit == "m^3 h^-1") %>%
-        select(analyzer, location, Q) %>%
+        select(DATE.TIME, analyzer, location, Q) %>%
         drop_na(Q)
 
+# Calculate mean, sd, and cv for ventilation rate
+q_stat_sum <- stat_table(q_long, response_vars = "Q", group_var = c("analyzer", "location"))
+
+# Boxplot for ventilation rate
 q_boxplot <- ggplot(q_long, aes(x = analyzer, y = Q, fill = analyzer)) +
         geom_boxplot(outlier.shape = NA) + 
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_wrap(~ location) +
-        labs(title = "Ventilation Rate (Q) by Analyzer and Location",
-             y = "Ventilation Rate [m³/h]",
-             fill = "Analyzer") +
+        labs(
+                title = "Ventilation Rate (Q) by Analyzer and Location",
+                y = "Ventilation Rate [m³/h]",
+                fill = "Analyzer"
+        ) +
         theme_bw() +
         theme(legend.position = "top")
+
+# Write stat summary as csv
+readr::write_excel_csv(c_stat_sum, "c_stat_summary.csv")
+readr::write_excel_csv(d_stat_sum, "d_stat_summary.csv")
+readr::write_excel_csv(e_stat_sum, "e_stat_summary.csv")
+readr::write_excel_csv(q_stat_sum, "q_stat_summary.csv")
+
 
 # Named list of plots with specific dimensions
 statplots <- list(
@@ -530,11 +556,11 @@ statplots <- list(
 # Save plots with their specific sizes
 for (plot_name in names(statplots)) {
         ggsave(
-                filename = paste0(plot_name, ".png"),
+                filename = paste0(plot_name, ".pdf"),
                 plot     = statplots[[plot_name]]$plot,
                 width    = statplots[[plot_name]]$width,
                 height   = statplots[[plot_name]]$height,
-                dpi      = 300
+                dpi      = 600
         )
 }
 
@@ -569,4 +595,8 @@ eCH4_matrix <- cor(eCH4_matrix, use = "pairwise.complete.obs")
 # Plot the correlogram
 ggcorrplot(eCH4_matrix, method = "circle", type = "lower", lab = TRUE,
            title = "Correlation of e_CH4_N Across Analyzers")
+
+
+
+result <- stat_table(emission_reshaped, c("CO2", "CH4", "NH3", "Q"), c("type", "location"))
 
