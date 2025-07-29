@@ -82,10 +82,10 @@ reparam <- function(data) {
         
         meta_cols <- c("DATE.TIME", "day", "hour", "lab", "analyzer")
         
-        # Include ratio variables in gases
+        # Now includes ratios
         gases <- c("CO2", "CH4", "NH3", "CONH", "COCH", "CHNH")
         
-        # Define matching pattern for gas variables
+        # Match all expected gas and ratio columns
         gas_pattern <- paste0(
                 "(",
                 paste(c(
@@ -138,7 +138,17 @@ reparam <- function(data) {
                                 location_code == "N" ~ "North outside",
                                 location_code == "S" ~ "South outside",
                                 TRUE ~ NA_character_
-                        ),
+                        )
+                ) %>%
+                select(all_of(meta_cols), location, type, unit, gas, value)
+        
+        wide_gas_df <- long_df %>%
+                pivot_wider(
+                        names_from = gas,
+                        values_from = value
+                ) %>%
+                relocate(any_of(gases), Q, .after = unit) %>%
+                mutate(
                         DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
                         day = as.factor(day),
                         hour = as.factor(hour),
@@ -146,14 +156,11 @@ reparam <- function(data) {
                         analyzer = as.factor(analyzer),
                         location = as.factor(location),
                         type = as.factor(type),
-                        unit = as.factor(unit),
-                        gas = as.factor(gas)
-                ) %>%
-                select(all_of(meta_cols), location, type, unit, gas, variable, value)
+                        unit = as.factor(unit)
+                )
         
-        return(long_df)
+        return(wide_gas_df)
 }
-
 
 # Development of function stat_table
 stat_table <- function(data, response_vars, group_vars) {
@@ -176,6 +183,7 @@ stat_table <- function(data, response_vars, group_vars) {
                         .groups = "drop"
                 )
 }
+
 
 # Development of function HSD_table
 HSD_table <- function(data, response_vars, group_var) {
@@ -434,6 +442,28 @@ cCO2 <- emiconplot(
         type_filter = "concentration",
         unit_filter = "ppm")
 
+
+# Ratio plots
+r_CONH <- emiconplot(
+        data = emission_reshaped, 
+        variable = "CONH",
+        type_filter = "ratio",
+        unit_filter = "ratio")
+
+r_COCH <- emiconplot(
+        data = emission_reshaped, 
+        variable = "COCH",
+        type_filter = "ratio",
+        unit_filter = "ratio")
+
+r_CHNH <- emiconplot(
+        data = emission_reshaped, 
+        variable = "CHNH",
+        type_filter = "ratio",
+        unit_filter = "ratio")
+
+
+
 # Delta plots (ppm)
 dNH3 <- emiconplot(
         data = emission_reshaped, 
@@ -467,6 +497,9 @@ dailyplots <- list(
         cNH3   = cNH3,
         cCH4   = cCH4,
         cCO2   = cCO2,
+        r_COCH = r_COCH,
+        r_CONH = r_CONH,
+        r_CHNH = r_CHNH,
         dNH3   = dNH3,
         dCH4   = dCH4,
         dCO2   = dCO2,
