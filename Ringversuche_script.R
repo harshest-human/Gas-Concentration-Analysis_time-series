@@ -18,95 +18,6 @@ library(ggcorrplot)
 library(networkD3)
 
 ######## Development of functions #######
-# Development of function reshape parameters
-reparam <- function(data) {
-        library(dplyr)
-        library(tidyr)
-        library(stringr)
-        
-        meta_cols <- c("DATE.TIME", "day", "hour", "lab", "analyzer")
-        gases <- c("CO2", "CH4", "NH3")
-        
-        gas_pattern <- paste0(
-                "(",
-                paste(c(
-                        paste0("^", gases, "_(in|N|S)$"),
-                        paste0("^delta_", gases, "_(N|S)(_ppm|_mgm3)?$"),
-                        paste0("^e_", gases, "_(N|S)$")
-                ), collapse = "|"),
-                ")"
-        )
-        
-        gas_cols <- grep(gas_pattern, names(data), value = TRUE)
-        
-        # Add ventilation columns
-        vent_cols <- c("Q_Vent_rate_N", "Q_Vent_rate_S")
-        all_cols <- c(meta_cols, gas_cols, vent_cols[vent_cols %in% names(data)])
-        
-        if (length(gas_cols) == 0 && !any(vent_cols %in% names(data))) {
-                stop("No gas-related or ventilation columns matched. Please check column names or patterns.")
-        }
-        
-        df <- data %>% select(all_of(all_cols))
-        
-        long_df <- df %>%
-                pivot_longer(
-                        cols = -all_of(meta_cols),
-                        names_to = "variable",
-                        values_to = "value"
-                ) %>%
-                mutate(
-                        gas = case_when(
-                                variable %in% vent_cols ~ "Q",
-                                TRUE ~ str_extract(variable, "CO2|CH4|NH3")
-                        ),
-                        type = case_when(
-                                str_starts(variable, "e_") ~ "emission",
-                                str_starts(variable, "delta_") ~ "delta",
-                                variable %in% vent_cols ~ "Ventilation rate",
-                                TRUE ~ "concentration"
-                        ),
-                        unit = case_when(
-                                variable %in% vent_cols ~ "m^3 h^-1",
-                                type == "emission" ~ "g h^-1",
-                                str_detect(variable, "_mgm3") ~ "mg m^-3",
-                                str_detect(variable, "_ppm") ~ "ppm",
-                                TRUE ~ "ppm"
-                        ),
-                        location_code = str_extract(variable, "(?<=_)(in|N|S)(?=(_|$))"),
-                        location = case_when(
-                                location_code == "in" ~ "Ringline inside",
-                                location_code == "N" ~ "North outside",
-                                location_code == "S" ~ "South outside",
-                                TRUE ~ NA_character_
-                        )
-                ) %>%
-                select(all_of(meta_cols), location, type, unit, gas, value)
-        
-        wide_gas_df <- long_df %>%
-                pivot_wider(
-                        names_from = gas,
-                        values_from = value
-                ) %>%
-                relocate(CO2, CH4, NH3, Q, .after = unit) %>%
-                mutate(
-                        DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
-                        day = as.factor(day),
-                        hour = as.factor(hour),
-                        lab = as.factor(lab),
-                        analyzer = as.factor(analyzer),
-                        location = as.factor(location),
-                        type = as.factor(type),
-                        unit = as.factor(unit),
-                        CO2 = as.numeric(CO2),
-                        CH4 = as.numeric(CH4),
-                        NH3 = as.numeric(NH3),
-                        Q = as.numeric(Q)
-                )
-        
-        return(wide_gas_df)
-}
-
 # Development of indirect.CO2.balance function
 indirect.CO2.balance <- function(df) {
         df %>%
@@ -163,6 +74,87 @@ indirect.CO2.balance <- function(df) {
                         )
 }
 
+# Development of function reshape parameters
+reparam <- function(data) {
+        library(dplyr)
+        library(tidyr)
+        library(stringr)
+        
+        meta_cols <- c("DATE.TIME", "day", "hour", "lab", "analyzer")
+        
+        # Include ratio variables in gases
+        gases <- c("CO2", "CH4", "NH3", "CONH", "COCH", "CHNH")
+        
+        # Define matching pattern for gas variables
+        gas_pattern <- paste0(
+                "(",
+                paste(c(
+                        paste0("^", gases, "_(in|N|S)$"),
+                        paste0("^delta_", c("CO2", "CH4", "NH3"), "_(N|S)(_ppm|_mgm3)?$"),
+                        paste0("^e_", c("CO2", "CH4", "NH3"), "_(N|S)$")
+                ), collapse = "|"),
+                ")"
+        )
+        
+        gas_cols <- grep(gas_pattern, names(data), value = TRUE)
+        vent_cols <- c("Q_Vent_rate_N", "Q_Vent_rate_S")
+        all_cols <- c(meta_cols, gas_cols, vent_cols[vent_cols %in% names(data)])
+        
+        if (length(gas_cols) == 0 && !any(vent_cols %in% names(data))) {
+                stop("No gas-related or ventilation columns matched. Please check column names or patterns.")
+        }
+        
+        df <- data %>% select(all_of(all_cols))
+        
+        long_df <- df %>%
+                pivot_longer(
+                        cols = -all_of(meta_cols),
+                        names_to = "variable",
+                        values_to = "value"
+                ) %>%
+                mutate(
+                        gas = case_when(
+                                variable %in% vent_cols ~ "Q",
+                                TRUE ~ str_extract(variable, paste(gases, collapse = "|"))
+                        ),
+                        type = case_when(
+                                str_starts(variable, "e_") ~ "emission",
+                                str_starts(variable, "delta_") ~ "delta",
+                                gas %in% c("CONH", "COCH", "CHNH") ~ "ratio",
+                                variable %in% vent_cols ~ "Ventilation rate",
+                                TRUE ~ "concentration"
+                        ),
+                        unit = case_when(
+                                variable %in% vent_cols ~ "m^3 h^-1",
+                                type == "emission" ~ "g h^-1",
+                                type == "delta" & str_detect(variable, "_mgm3") ~ "mg m^-3",
+                                type == "delta" ~ "ppm",
+                                type == "ratio" ~ "ratio",
+                                TRUE ~ "ppm"
+                        ),
+                        location_code = str_extract(variable, "(?<=_)(in|N|S)(?=(_|$))"),
+                        location = case_when(
+                                location_code == "in" ~ "Ringline inside",
+                                location_code == "N" ~ "North outside",
+                                location_code == "S" ~ "South outside",
+                                TRUE ~ NA_character_
+                        ),
+                        DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
+                        day = as.factor(day),
+                        hour = as.factor(hour),
+                        lab = as.factor(lab),
+                        analyzer = as.factor(analyzer),
+                        location = as.factor(location),
+                        type = as.factor(type),
+                        unit = as.factor(unit),
+                        gas = as.factor(gas)
+                ) %>%
+                select(all_of(meta_cols), location, type, unit, gas, variable, value)
+        
+        return(long_df)
+}
+
+
 # Development of function stat_table
 stat_table <- function(data, response_vars, group_vars) {
         require(dplyr)
@@ -184,7 +176,6 @@ stat_table <- function(data, response_vars, group_vars) {
                         .groups = "drop"
                 )
 }
-
 
 # Development of function HSD_table
 HSD_table <- function(data, response_vars, group_var) {
@@ -319,12 +310,31 @@ input_combined <-full_join(gas_data, animal_temp, by = "DATE.TIME") %>%
 input_combined <- input_combined %>% select(DATE.TIME, hour, everything())
 write.csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv", row.names = FALSE)
 
-######## Computation of ventilation rates and emissions #########
+######## Computation of ratios, ventilation rates and emissions #########
 # Convert DATE.TIME format
 input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 10:00:00")
 
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
+
+# Calculate ratio of gases
+emission_combined <- emission_combined %>%
+        mutate(
+                # CO2 to NH3
+                CONH_in = CO2_in / NH3_in,
+                CONH_N  = CO2_N  / NH3_N,
+                CONH_S  = CO2_S  / NH3_S,
+                
+                # CO2 to CH4
+                COCH_in = CO2_in / CH4_in,
+                COCH_N  = CO2_N  / CH4_N,
+                COCH_S  = CO2_S  / CH4_S,
+                
+                # CH4 to NH3
+                CHNH_in = CH4_in / NH3_in,
+                CHNH_N  = CH4_N  / NH3_N,
+                CHNH_S  = CH4_S  / NH3_S
+        )
 
 # Write csv
 write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv", row.names = FALSE)
@@ -350,6 +360,13 @@ qvars <- c(
         "Q_Vent_rate_N", "Q_Vent_rate_S"
 )
 
+rvars <- c(
+        "CONH_in", "CONH_N", "CONH_S",
+        "COCH_in", "COCH_N", "COCH_S",
+        "CHNH_in", "CHNH_N", "CHNH_S"
+)
+
+
 vars <- c(
         "CO2_in", "CH4_in", "NH3_in",
         "CO2_N", "CH4_N", "NH3_N",
@@ -357,11 +374,25 @@ vars <- c(
         "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
         "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm",
         "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
-        "Q_Vent_rate_N", "Q_Vent_rate_S"
+        "Q_Vent_rate_N", "Q_Vent_rate_S",
+        "CONH_in", "CONH_N", "CONH_S",
+        "COCH_in", "COCH_N", "COCH_S",
+        "CHNH_in", "CHNH_N", "CHNH_S"
         )
 
 # Tukey HSD
-result_HSD_summary <- HSD_table(data = emission_combined, response_vars = vars, group_var = "analyzer")
+# Remove rows where any response variable has NA/NaN/Inf
+emission_clean <- emission_combined %>%
+        filter(if_all(all_of(vars), ~ !is.na(.) & is.finite(.)))
+
+# Then perform Tukey HSD
+result_HSD_summary <- HSD_table(
+        data = emission_clean,
+        response_vars = vars,
+        group_var = "analyzer"
+)
+
+# Save the result
 write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 
