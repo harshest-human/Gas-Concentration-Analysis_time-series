@@ -523,7 +523,33 @@ c_long <- emission_reshaped %>%
         drop_na(concentration)
 
 # Calculate mean, sd and cv
-c_stat_sum <- stat_table(c_long, response_vars = "concentration", group_var = c("analyzer", "location", "gas"))
+c_stat_sum <- stat_table(c_long, response_vars = "concentration", group_var = c("analyzer", "location", "gas"))%>% filter(analyzer != "FTIR.4")
+ggplot(c_stat_sum, aes(x = location, y = analyzer, fill = cv_concentration)) +
+        geom_tile(color = "white") +
+        facet_wrap(~gas) +
+        scale_fill_gradient(low = "white", high = "red", name = "CV (%)") +
+        theme_light(base_size = 14) +
+        theme(
+                axis.text.x = element_text(angle = 45, hjust = 1),
+                panel.grid = element_blank()
+        ) +
+        labs(
+                title = "Coefficient of Variation (CV) by Analyzer and Location",
+                x = "Location",
+                y = "Analyzer"
+        )
+
+# Create barplot
+ggplot(c_stat_sum, aes(x = gas, y = cv_concentration, fill = location)) +
+        geom_bar(stat = "identity", position = "dodge") +
+        facet_wrap(~ analyzer) +
+        labs(
+                title = "CV of Gas Concentrations by Location and Analyzer",
+                x = "Gas",
+                y = "CV (%)"
+        ) +
+        theme_light()
+
 
 
 c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
