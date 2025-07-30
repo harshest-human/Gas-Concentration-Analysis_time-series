@@ -25,11 +25,6 @@ indirect.CO2.balance <- function(df) {
                         P_CO2_term = 0.185,
                         a = 0.22,
                         h_min = 2.9,
-                        CO2_Molmass = 44.01,
-                        NH3_Molmass = 17.031,
-                        CH4_Molmass = 16.04,
-                        R_gas_constant = 8.314472,
-                        p_pressure_ref = 1013,
                         hour = hour(DATE.TIME),
                         
                         A_corr = 1 - a * 3 * sin((2 * pi / 24) * (hour + 6 - h_min)),
@@ -39,38 +34,27 @@ indirect.CO2.balance <- function(df) {
                         n_LU = (n_animals * m_weight) / 500,
                         P_CO2_T_A_all_animal = hpu_T_A_corr_all_animal * P_CO2_term,
                         
-                        # Ventilation rate North
-                        Q_Vent_rate_N = P_CO2_T_A_all_animal / ((CO2_in - CO2_N) * 1e-6),
-                        # Ventilation rate South
-                        Q_Vent_rate_S = P_CO2_T_A_all_animal / ((CO2_in - CO2_S) * 1e-6),
-                        
                         # Delta in ppm (original concentration differences)
-                        delta_NH3_N_ppm = NH3_in - NH3_N,
-                        delta_CH4_N_ppm = CH4_in - CH4_N,
-                        delta_CO2_N_ppm = CO2_in - CO2_N,
+                        delta_NH3_N = NH3_in - NH3_N,
+                        delta_CH4_N = CH4_in - CH4_N,
+                        delta_CO2_N = CO2_in - CO2_N,
                         
-                        delta_NH3_S_ppm = NH3_in - NH3_S,
-                        delta_CH4_S_ppm = CH4_in - CH4_S,
-                        delta_CO2_S_ppm = CO2_in - CO2_S,
+                        delta_NH3_S = NH3_in - NH3_S,
+                        delta_CH4_S = CH4_in - CH4_S,
+                        delta_CO2_S = CO2_in - CO2_S,
                         
-                        # Delta converted to mg/m3
-                        delta_NH3_N_mgm3 = (0.1 * NH3_Molmass * p_pressure_ref * delta_NH3_N_ppm) / ((Temperature + 273.15) * R_gas_constant),
-                        delta_CH4_N_mgm3 = (0.1 * CH4_Molmass * p_pressure_ref * delta_CH4_N_ppm) / ((Temperature + 273.15) * R_gas_constant),
-                        delta_CO2_N_mgm3 = (0.1 * CO2_Molmass * p_pressure_ref * delta_CO2_N_ppm) / ((Temperature + 273.15) * R_gas_constant),
-                        
-                        delta_NH3_S_mgm3 = (0.1 * NH3_Molmass * p_pressure_ref * delta_NH3_S_ppm) / ((Temperature + 273.15) * R_gas_constant),
-                        delta_CH4_S_mgm3 = (0.1 * CH4_Molmass * p_pressure_ref * delta_CH4_S_ppm) / ((Temperature + 273.15) * R_gas_constant),
-                        delta_CO2_S_mgm3 = (0.1 * CO2_Molmass * p_pressure_ref * delta_CO2_S_ppm) / ((Temperature + 273.15) * R_gas_constant),
+                        # Ventilation rate North
+                        Q_Vent_rate_N = P_CO2_T_A_all_animal / ((delta_CO2_N) * 1e-6),
+                        # Ventilation rate South
+                        Q_Vent_rate_S = P_CO2_T_A_all_animal / ((delta_CO2_S) * 1e-6),
                         
                         # Emissions North
-                        e_NH3_N = (delta_NH3_N_mgm3 * Q_Vent_rate_N) / 1000,
-                        e_CH4_N = (delta_CH4_N_mgm3 * Q_Vent_rate_N) / 1000,
-                        e_CO2_N = (delta_CO2_N_mgm3 * Q_Vent_rate_N) / 1000,
+                        e_NH3_N = (delta_NH3_N * Q_Vent_rate_N) / 1000,
+                        e_CH4_N = (delta_CH4_N * Q_Vent_rate_N) / 1000,
                         
                         # Emissions South
-                        e_NH3_S = (delta_NH3_S_mgm3 * Q_Vent_rate_S) / 1000,
-                        e_CH4_S = (delta_CH4_S_mgm3 * Q_Vent_rate_S) / 1000,
-                        e_CO2_S = (delta_CO2_S_mgm3 * Q_Vent_rate_S) / 1000,
+                        e_NH3_S = (delta_NH3_S * Q_Vent_rate_S) / 1000,
+                        e_CH4_S = (delta_CH4_S * Q_Vent_rate_S) / 1000,
                         )
 }
 
@@ -83,14 +67,14 @@ reparam <- function(data) {
         meta_cols <- c("DATE.TIME", "day", "hour", "lab", "analyzer")
         
         # Now includes ratios
-        gases <- c("CO2", "CH4", "NH3", "CONH", "COCH", "CHNH")
+        gases <- c("CO2", "CH4", "NH3", "NHCO", "NHCH", "CHCO")
         
-        # Match all expected gas and ratio columns
+        # Match all expected gas and ratio columns without _mgm3 suffix
         gas_pattern <- paste0(
                 "(",
                 paste(c(
                         paste0("^", gases, "_(in|N|S)$"),
-                        paste0("^delta_", c("CO2", "CH4", "NH3"), "_(N|S)(_ppm|_mgm3)?$"),
+                        paste0("^delta_", c("CO2", "CH4", "NH3"), "_(N|S)$"),
                         paste0("^e_", c("CO2", "CH4", "NH3"), "_(N|S)$")
                 ), collapse = "|"),
                 ")"
@@ -117,20 +101,12 @@ reparam <- function(data) {
                                 variable %in% vent_cols ~ "Q",
                                 TRUE ~ str_extract(variable, paste(gases, collapse = "|"))
                         ),
-                        type = case_when(
+                        var_type = case_when(
                                 str_starts(variable, "e_") ~ "emission",
                                 str_starts(variable, "delta_") ~ "delta",
-                                gas %in% c("CONH", "COCH", "CHNH") ~ "ratio",
+                                gas %in% c("NHCO", "CHCO", "NHCH") ~ "ratio",
                                 variable %in% vent_cols ~ "Ventilation rate",
                                 TRUE ~ "concentration"
-                        ),
-                        unit = case_when(
-                                variable %in% vent_cols ~ "m^3 h^-1",
-                                type == "emission" ~ "g h^-1",
-                                type == "delta" & str_detect(variable, "_mgm3") ~ "mg m^-3",
-                                type == "delta" ~ "ppm",
-                                type == "ratio" ~ "ratio",
-                                TRUE ~ "ppm"
                         ),
                         location_code = str_extract(variable, "(?<=_)(in|N|S)(?=(_|$))"),
                         location = case_when(
@@ -140,14 +116,14 @@ reparam <- function(data) {
                                 TRUE ~ NA_character_
                         )
                 ) %>%
-                select(all_of(meta_cols), location, type, unit, gas, value)
+                select(all_of(meta_cols), location, var_type, gas, value)
         
         wide_gas_df <- long_df %>%
                 pivot_wider(
                         names_from = gas,
                         values_from = value
                 ) %>%
-                relocate(any_of(gases), Q, .after = unit) %>%
+                relocate(any_of(gases), Q, .after = var_type) %>%
                 mutate(
                         DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
                         day = as.factor(day),
@@ -155,8 +131,7 @@ reparam <- function(data) {
                         lab = as.factor(lab),
                         analyzer = as.factor(analyzer),
                         location = as.factor(location),
-                        type = as.factor(type),
-                        unit = as.factor(unit)
+                        var_type = as.factor(var_type)
                 )
         
         return(wide_gas_df)
@@ -223,7 +198,7 @@ HSD_table <- function(data, response_vars, group_var) {
 }
 
 # Development of function emission and concentration plot
-emiconplot <- function(data, variable, type_filter = NULL, unit_filter = NULL) {
+emiconplot <- function(data, variable, var_type_filter = NULL) {
         library(dplyr)
         library(ggplot2)
         library(scales)
@@ -237,19 +212,30 @@ emiconplot <- function(data, variable, type_filter = NULL, unit_filter = NULL) {
                 stop("Data must have a 'day' column for faceting.")
         }
         
-        # Filter by type if specified
-        if (!is.null(type_filter) && "type" %in% names(data)) {
-                data <- data %>% filter(type == type_filter)
-        }
-        
-        # Filter by unit if specified
-        if (!is.null(unit_filter) && "unit" %in% names(data)) {
-                data <- data %>% filter(unit == unit_filter)
+        # Filter by var_type if specified
+        if (!is.null(var_type_filter) && "var_type" %in% names(data)) {
+                data <- data %>% filter(var_type == var_type_filter)
         }
         
         # Check variable exists
         if (!variable %in% names(data)) {
                 stop(paste("Variable", variable, "not found in data"))
+        }
+        
+        # Ensure hour is ordered factor or numeric
+        if ("hour" %in% names(data)) {
+                if (!is.numeric(data$hour)) {
+                        # Try to convert to numeric if possible
+                        suppressWarnings(num_hour <- as.numeric(as.character(data$hour)))
+                        if (all(!is.na(num_hour))) {
+                                data$hour <- num_hour
+                        } else {
+                                # Otherwise make ordered factor
+                                data$hour <- factor(data$hour, ordered = TRUE)
+                        }
+                }
+        } else {
+                stop("Data must have an 'hour' column for x-axis.")
         }
         
         # Summarize mean and SE by day, hour, location, analyzer
@@ -272,12 +258,12 @@ emiconplot <- function(data, variable, type_filter = NULL, unit_filter = NULL) {
         )
         
         y_label <- variable
-        if (!is.null(type_filter)) y_label <- paste0(y_label, " (", type_filter, ")")
-        if (!is.null(unit_filter)) y_label <- paste0(y_label, " [", unit_filter, "]")
+        if (!is.null(var_type_filter)) y_label <- paste0(y_label, " (", var_type_filter, ")")
         
         p <- ggplot(summary_data, aes(x = hour, y = mean_val, color = analyzer, group = analyzer)) +
                 geom_line() +
                 geom_point(size = 1) +
+                geom_errorbar(aes(ymin = mean_val - se_val, ymax = mean_val + se_val), width = 0.2) +
                 scale_color_manual(values = analyzer_colors) +
                 labs(
                         x = "Hour",
@@ -289,8 +275,8 @@ emiconplot <- function(data, variable, type_filter = NULL, unit_filter = NULL) {
                 theme_bw()
         
         print(p)
+        return(p)
 }
-
 
 ######## Import Gas Data #########
 # Load animal and temperature data
@@ -325,24 +311,24 @@ input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" &
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
 
-# Calculate ratio of gases
 emission_combined <- emission_combined %>%
         mutate(
-                # CO2 to NH3
-                CONH_in = CO2_in / NH3_in,
-                CONH_N  = CO2_N  / NH3_N,
-                CONH_S  = CO2_S  / NH3_S,
+                # NH3 to CO2
+                NHCO_in = (NH3_in / CO2_in)*100,
+                NHCO_N  = (NH3_N  / CO2_N)*100,
+                NHCO_S  = (NH3_S  / CO2_S)*100,
                 
-                # CO2 to CH4
-                COCH_in = CO2_in / CH4_in,
-                COCH_N  = CO2_N  / CH4_N,
-                COCH_S  = CO2_S  / CH4_S,
+                # NH3 to CH4
+                NHCH_in = (NH3_in / CH4_in)*100,
+                NHCH_N  = (NH3_N  / CH4_N)*100,
+                NHCH_S  = (NH3_S  / CH4_S)*100,
                 
-                # CH4 to NH3
-                CHNH_in = CH4_in / NH3_in,
-                CHNH_N  = CH4_N  / NH3_N,
-                CHNH_S  = CH4_S  / NH3_S
+                # CH4 to CO2
+                CHCO_in = (CH4_in / CO2_in)*100,
+                CHCO_N  = (CH4_N  / CO2_N)*100,
+                CHCO_S  = (CH4_S  / CO2_S)*100
         )
+
 
 # Write csv
 write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv", row.names = FALSE)
@@ -356,8 +342,8 @@ cvars <- c(
 )
 
 dvars <- c(
-        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
-        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm"
+        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
+        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S"
 )
 
 evars <- c(
@@ -369,9 +355,9 @@ qvars <- c(
 )
 
 rvars <- c(
-        "CONH_in", "CONH_N", "CONH_S",
-        "COCH_in", "COCH_N", "COCH_S",
-        "CHNH_in", "CHNH_N", "CHNH_S"
+        "NHCO_in", "NHCO_N", "NHCO_S",
+        "CHCO_in", "CHCO_N", "CHCO_S",
+        "NHCH_in", "NHCH_N", "NHCH_S"
 )
 
 
@@ -379,13 +365,13 @@ vars <- c(
         "CO2_in", "CH4_in", "NH3_in",
         "CO2_N", "CH4_N", "NH3_N",
         "CO2_S", "CH4_S", "NH3_S",
-        "delta_CO2_N_ppm", "delta_CH4_N_ppm", "delta_NH3_N_ppm",
-        "delta_CO2_S_ppm", "delta_CH4_S_ppm", "delta_NH3_S_ppm",
+        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
+        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S",
         "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
         "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "CONH_in", "CONH_N", "CONH_S",
-        "COCH_in", "COCH_N", "COCH_S",
-        "CHNH_in", "CHNH_N", "CHNH_S"
+        "NHCO_in", "NHCO_N", "NHCO_S",
+        "CHCO_in", "CHCO_N", "CHCO_S",
+        "NHCH_in", "NHCH_N", "NHCH_S"
         )
 
 # Tukey HSD
@@ -413,54 +399,46 @@ write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.c
 eNH3 <- emiconplot(
         data = emission_reshaped, 
         variable = "NH3",
-        type_filter = "emission",
-        unit_filter = "g h^-1")
+        var_type_filter = "emission")
 
 eCH4 <- emiconplot(
         data = emission_reshaped, 
         variable = "CH4",
-        type_filter = "emission",
-        unit_filter = "g h^-1")
+        var_type_filter = "emission")
 
 
 # Concentration plots (ppm)
 cNH3 <- emiconplot(
         data = emission_reshaped, 
         variable = "NH3",
-        type_filter = "concentration",
-        unit_filter = "ppm")
+        var_type_filter = "concentration")
 
 cCH4 <- emiconplot(
         data = emission_reshaped, 
         variable = "CH4",
-        type_filter = "concentration",
-        unit_filter = "ppm")
+        var_type_filter = "concentration")
 
 cCO2 <- emiconplot(
         data = emission_reshaped, 
         variable = "CO2",
-        type_filter = "concentration",
-        unit_filter = "ppm")
+        var_type_filter = "concentration")
 
 
 # Ratio plots
-r_CONH <- emiconplot(
+r_NHCO <- emiconplot(
         data = emission_reshaped, 
-        variable = "CONH",
-        type_filter = "ratio",
-        unit_filter = "ratio")
+        variable = "NHCO",
+        var_type_filter = "ratio")
 
-r_COCH <- emiconplot(
+r_CHCO <- emiconplot(
         data = emission_reshaped, 
-        variable = "COCH",
-        type_filter = "ratio",
-        unit_filter = "ratio")
+        variable = "CHCO",
+        var_type_filter = "ratio")
 
-r_CHNH <- emiconplot(
+r_NHCH <- emiconplot(
         data = emission_reshaped, 
-        variable = "CHNH",
-        type_filter = "ratio",
-        unit_filter = "ratio")
+        variable = "NHCH",
+        var_type_filter = "ratio")
 
 
 
@@ -468,26 +446,22 @@ r_CHNH <- emiconplot(
 dNH3 <- emiconplot(
         data = emission_reshaped, 
         variable = "NH3",
-        type_filter = "delta",
-        unit_filter = "ppm")
+        var_type_filter = "delta")
 
 dCH4 <- emiconplot(
         data = emission_reshaped, 
         variable = "CH4",
-        type_filter = "delta",
-        unit_filter = "ppm")
+        var_type_filter = "delta")
 
 dCO2 <- emiconplot(
         data = emission_reshaped, 
         variable = "CO2",
-        type_filter = "delta",
-        unit_filter = "ppm")
+        var_type_filter = "delta")
 
 qVent <-  emiconplot(
         data = emission_reshaped, 
         variable = "Q",
-        type_filter = "Ventilation rate",
-        unit_filter = "m^3 h^-1")
+        var_type_filter = "Ventilation rate")
 
 
 # Create a named list of all your plots and desired file names
@@ -497,9 +471,9 @@ dailyplots <- list(
         cNH3   = cNH3,
         cCH4   = cCH4,
         cCO2   = cCO2,
-        r_COCH = r_COCH,
-        r_CONH = r_CONH,
-        r_CHNH = r_CHNH,
+        r_CHCO = r_CHCO,
+        r_NHCO = r_NHCO,
+        r_NHCH = r_NHCH,
         dNH3   = dNH3,
         dCH4   = dCH4,
         dCO2   = dCO2,
@@ -517,7 +491,7 @@ for (plot_name in names(dailyplots)) {
 ######## Stats Visualization ########
 # Concentration long
 c_long <- emission_reshaped %>%
-        filter(type == "concentration", unit == "ppm") %>%
+        filter(var_type == "concentration", unit == "ppm") %>%
         select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
         pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
         drop_na(concentration)
@@ -563,7 +537,7 @@ c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer
 
 # Delta long
 d_long <- emission_reshaped %>%
-        filter(type == "delta", unit == "ppm") %>%
+        filter(var_type == "delta", unit == "ppm") %>%
         select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
         pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
         drop_na(concentration)
@@ -586,7 +560,7 @@ d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer
 
 # Emission long
 e_long <- emission_reshaped %>%
-        filter(type == "emission", unit == "g h^-1") %>%
+        filter(var_type == "emission", unit == "g h^-1") %>%
         select(DATE.TIME, analyzer, location, CH4, NH3) %>%
         pivot_longer(cols = c(CH4, NH3), names_to = "gas", values_to = "emission") %>%
         drop_na(emission)
@@ -609,7 +583,7 @@ e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
 
 # Ventilation rate long
 q_long <- emission_reshaped %>%
-        filter(type == "Ventilation rate", unit == "m^3 h^-1") %>%
+        filter(var_type == "Ventilation rate", unit == "m^3 h^-1") %>%
         select(DATE.TIME, analyzer, location, Q) %>%
         drop_na(Q)
 
@@ -668,7 +642,7 @@ eNH3_matrix <- eNH3_matrix %>% select(-DATE.TIME)
 eNH3_matrix <- cor(eNH3_matrix, use = "pairwise.complete.obs")
 
 # Plot the correlogram
-ggcorrplot(eNH3_matrix, method = "circle", type = "lower", lab = TRUE,
+ggcorrplot(eNH3_matrix, method = "circle", var_type = "lower", lab = TRUE,
            title = "Correlation of e_NH3_N Across Analyzers")
 
 
@@ -684,12 +658,12 @@ eCH4_matrix <- eCH4_matrix %>% select(-DATE.TIME)
 eCH4_matrix <- cor(eCH4_matrix, use = "pairwise.complete.obs")
 
 # Plot the correlogram
-ggcorrplot(eCH4_matrix, method = "circle", type = "lower", lab = TRUE,
+ggcorrplot(eCH4_matrix, method = "circle", var_type = "lower", lab = TRUE,
            title = "Correlation of e_CH4_N Across Analyzers")
 
 
 
-result <- stat_table(emission_reshaped, c("CO2", "CH4", "NH3", "Q"), c("type", "location"))
+result <- stat_table(emission_reshaped, c("CO2", "CH4", "NH3", "Q"), c("var_type", "location"))
 
 
 
