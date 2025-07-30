@@ -222,43 +222,28 @@ emiconplot <- function(data, vars, var_type_filter = NULL) {
                 stop(paste("These vars are missing in the data:", paste(missing_vars, collapse = ", ")))
         }
         
-        # Create variable labels for y facets (simple, no subscripts here)
-        # You can customize or extend this mapping as needed
         label_map <- list(
                 "concentration" = c(
-                        CO2 = "CO2",
-                        CH4 = "CH4",
-                        NH3 = "NH3",
-                        NHCO = "NHCO",
-                        NHCH = "NHCH",
-                        CHCO = "CHCO"
+                        CO2 = "CO2 concentration",
+                        CH4 = "CH4 concentration",
+                        NH3 = "NH3 concentration"
                 ),
                 "ratio" = c(
-                        NHCO = "NHCO",
-                        NHCH = "NHCH",
-                        CHCO = "CHCO"
+                        NHCO = "NH3/CO2 ratio",
+                        NHCH = "NH3/CH4 ratio",
+                        CHCO = "CH4/CO2 ratio"
                 ),
-                "ventilation rate" = c(
+                "Ventilation rate" = c(
                         Q = "Ventilation rate (Q)"
                 ),
                 "emission" = c(
-                        CO2 = "CO2",
-                        CH4 = "CH4",
-                        NH3 = "NH3"
+                        CH4 = "CH4 emission",
+                        NH3 = "NH3 emission"
                 )
         )
         
-        # Determine y axis label by var_type_filter
+        # Set generic y axis label (always the same)
         y_lab <- "Mean ± SE"
-        if (!is.null(var_type_filter)) {
-                if ("concentration" %in% var_type_filter) {
-                        y_lab <- expression(paste("Concentration (", mg/m^3, ") Mean ± SE"))
-                } else if ("ventilation rate" %in% var_type_filter) {
-                        y_lab <- expression(paste("Ventilation rate (", m^3, " ", h^{-1}, ") Mean ± SE"))
-                } else if ("emission" %in% var_type_filter) {
-                        y_lab <- expression(paste("Emission (", g, " ", h^{-1}, ") Mean ± SE"))
-                }
-        }
         
         # Reshape to long format
         long_data <- data %>%
@@ -312,7 +297,7 @@ emiconplot <- function(data, vars, var_type_filter = NULL) {
                 "CRDS.3" = 17   
         )
         
-        #plot
+        # Plot
         p <- ggplot(summary_data, aes(x = day, y = mean_val, color = analyzer, shape = analyzer, group = analyzer)) +
                 geom_line() +
                 geom_point(size = 2) +
@@ -320,6 +305,7 @@ emiconplot <- function(data, vars, var_type_filter = NULL) {
                 scale_color_manual(values = analyzer_colors) +
                 scale_shape_manual(values = analyzer_shapes) +
                 facet_grid(variable_label ~ location, scales = "free_y", switch = "y") +
+                scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) + 
                 labs(
                         x = "Day",
                         y = y_lab,
@@ -328,10 +314,8 @@ emiconplot <- function(data, vars, var_type_filter = NULL) {
                 ) +
                 theme_bw() +
                 theme(
-                        axis.text.x = element_text(angle = 45, hjust = 1),
-                        strip.text.y.left = element_text(angle = 0, face = "bold")
+                        axis.text.x = element_text(angle = 45, hjust = 1)
                 )
-        
         
         print(p)
         return(p)
@@ -455,15 +439,21 @@ emission_reshaped <-  reparam(emission_combined)
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
 # Concentration plots (ppm)
-emiconplot(data = emission_reshaped,
+c_trend_plot <- emiconplot(data = emission_reshaped,
            vars = c("CO2", "CH4", "NH3"),
            var_type_filter = "concentration")
 
-emiconplot(data = emission_reshaped,
+r_trend_plot <- emiconplot(data = emission_reshaped,
            vars = c("NHCO", "NHCH", "CHCO"),
            var_type_filter = "ratio")
 
+q_trend_plot <- emiconplot(data = emission_reshaped,
+                           vars = c("Q"),
+                           var_type_filter = "Ventilation rate")
 
+e_trend_plot <- emiconplot(data = emission_reshaped,
+                           vars = c("CH4", "NH3"),
+                           var_type_filter = "emission")
 
 # Create a named list of all your plots and desired file names
 dailyplots <- list(
