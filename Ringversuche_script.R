@@ -255,18 +255,22 @@ emiconplot <- function(data, vars = NULL, var_type_filter = NULL) {
         )
         
         # Facet by variable (rows) and location (columns)
-        p <- ggplot(summary_data, aes(x = day, y = mean_val, color = analyzer, group = analyzer)) +
+        p <- ggplot(summary_data, aes(x = day, y = mean_val, color = analyzer, shape = analyzer, group = analyzer)) +
+                geom_line() +
                 geom_point(size = 2) +
-                geom_smooth(method = "loess", se = TRUE, aes(fill = analyzer), alpha = 0.3, color = NA) +  # smooth shaded area
-                geom_line() + 
+                geom_errorbar(aes(ymin = mean_val - se_val, ymax = mean_val + se_val), width = 0.2) +
                 scale_color_manual(values = analyzer_colors) +
-                scale_fill_manual(values = analyzer_colors) +  # matching fill colors
                 scale_shape_manual(values = analyzer_shapes) +
                 facet_grid(variable ~ location, scales = "free_y", switch = "y") +
-                labs(x = "Day", y = ylab_to_use, color = "Analyzer", shape = "Analyzer", fill = "Analyzer") +
+                scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+                labs(
+                        x = "Day",
+                        y = ylab_to_use,
+                        color = "Analyzer",
+                        shape = "Analyzer"
+                ) +
                 theme_bw() +
                 theme(axis.text.x = element_text(angle = 45, hjust = 1))
-        
         
         print(p)
         return(p)
@@ -390,49 +394,43 @@ emission_reshaped <-  reparam(emission_combined)
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
 # Concentration plots (ppm)
-c_trend_plot <- emiconplot(data = emission_reshaped,
+c_erbr_plot <- emiconplot(data = emission_reshaped,
            vars = c("c_CO2", "c_CH4", "c_NH3"),
            var_type_filter = "concentration")
 
-r_trend_plot <- emiconplot(data = emission_reshaped,
+r_erbr_plot <- emiconplot(data = emission_reshaped,
            vars = c("NH3/CO2", "NH3/CH4", "CH4/CO2"),
            var_type_filter = "ratio")
 
-q_trend_plot <- emiconplot(data = emission_reshaped,
+q_erbr_plot <- emiconplot(data = emission_reshaped,
                            vars = c("Q_Vent_rate"),
                            var_type_filter = "ventilation")
 
-e_trend_plot <- emiconplot(data = emission_reshaped,
+e_erbr_plot <- emiconplot(data = emission_reshaped,
                            vars = c("e_CH4", "e_NH3"),
                            var_type_filter = "emission")
 
 
 # Create a named list of all your plots and desired file names
 dailyplots <- list(
-        c_trend_plot = c_trend_plot,
-        r_trend_plot = r_trend_plot,
-        q_trend_plot = q_trend_plot,
-        e_trend_plot = e_trend_plot)
+        c_erbr_plot = c_erbr_plot,
+        r_erbr_plot = r_erbr_plot,
+        q_erbr_plot = q_erbr_plot,
+        e_erbr_plot = e_erbr_plot)
 
 # Save each plot using ggsave
 for (plot_name in names(dailyplots)) {
         ggsave(
                 filename = paste0(plot_name, ".pdf"),
                 plot = dailyplots[[plot_name]],
-                width = 16, height = 12, dpi = 600)
+                width = 8, height = 8, dpi = 300)
 }
 
 
 ######## Stats Visualization ########
 # Concentration long
-c_long <- emission_reshaped %>%
-        filter(var_type == "concentration") %>%
-        select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
-        pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
-        drop_na(concentration)
-
 # Calculate mean, sd and cv
-c_stat_sum <- stat_table(c_long, response_vars = "concentration", group_var = c("analyzer", "location", "gas"))%>% filter(analyzer != "FTIR.4")
+c_stat_sum <- stat_table(emission_reshaped, response_vars = "concentration", group_var = c("analyzer", "location", "var_type", "variable"))%>% filter(analyzer != "FTIR.4")
 ggplot(c_stat_sum, aes(x = location, y = analyzer, fill = cv_concentration)) +
         geom_tile(color = "white") +
         facet_wrap(~gas) +
