@@ -491,7 +491,7 @@ for (plot_name in names(dailyplots)) {
 ######## Stats Visualization ########
 # Concentration long
 c_long <- emission_reshaped %>%
-        filter(var_type == "concentration", unit == "ppm") %>%
+        filter(var_type == "concentration") %>%
         select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
         pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
         drop_na(concentration)
@@ -537,7 +537,7 @@ c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer
 
 # Delta long
 d_long <- emission_reshaped %>%
-        filter(var_type == "delta", unit == "ppm") %>%
+        filter(var_type == "delta") %>%
         select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
         pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
         drop_na(concentration)
@@ -560,7 +560,7 @@ d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer
 
 # Emission long
 e_long <- emission_reshaped %>%
-        filter(var_type == "emission", unit == "g h^-1") %>%
+        filter(var_type == "emission") %>%
         select(DATE.TIME, analyzer, location, CH4, NH3) %>%
         pivot_longer(cols = c(CH4, NH3), names_to = "gas", values_to = "emission") %>%
         drop_na(emission)
@@ -583,7 +583,7 @@ e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
 
 # Ventilation rate long
 q_long <- emission_reshaped %>%
-        filter(var_type == "Ventilation rate", unit == "m^3 h^-1") %>%
+        filter(var_type == "Ventilation rate") %>%
         select(DATE.TIME, analyzer, location, Q) %>%
         drop_na(Q)
 
@@ -642,7 +642,7 @@ eNH3_matrix <- eNH3_matrix %>% select(-DATE.TIME)
 eNH3_matrix <- cor(eNH3_matrix, use = "pairwise.complete.obs")
 
 # Plot the correlogram
-ggcorrplot(eNH3_matrix, method = "circle", var_type = "lower", lab = TRUE,
+ggcorrplot(eNH3_matrix, method = "circle", type = "lower", lab = TRUE,
            title = "Correlation of e_NH3_N Across Analyzers")
 
 
@@ -658,7 +658,7 @@ eCH4_matrix <- eCH4_matrix %>% select(-DATE.TIME)
 eCH4_matrix <- cor(eCH4_matrix, use = "pairwise.complete.obs")
 
 # Plot the correlogram
-ggcorrplot(eCH4_matrix, method = "circle", var_type = "lower", lab = TRUE,
+ggcorrplot(eCH4_matrix, method = "circle", type = "lower", lab = TRUE,
            title = "Correlation of e_CH4_N Across Analyzers")
 
 
