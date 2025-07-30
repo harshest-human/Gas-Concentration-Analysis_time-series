@@ -111,8 +111,8 @@ reparam <- function(data) {
                         location_code = str_extract(variable, "(?<=_)(in|N|S)(?=(_|$))"),
                         location = case_when(
                                 location_code == "in" ~ "Ringline inside",
-                                location_code == "N" ~ "North outside",
-                                location_code == "S" ~ "South outside",
+                                location_code == "N" ~ "North background",
+                                location_code == "S" ~ "South background",
                                 TRUE ~ NA_character_
                         )
                 ) %>%
