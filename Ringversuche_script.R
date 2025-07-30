@@ -65,11 +65,9 @@ reparam <- function(data) {
         library(stringr)
         
         meta_cols <- c("DATE.TIME", "day", "hour", "lab", "analyzer")
-        
-        # Now includes ratios
         gases <- c("CO2", "CH4", "NH3", "NHCO", "NHCH", "CHCO")
+        vent_cols <- c("Q_Vent_rate_N", "Q_Vent_rate_S")
         
-        # Match all expected gas and ratio columns without _mgm3 suffix
         gas_pattern <- paste0(
                 "(",
                 paste(c(
@@ -81,60 +79,56 @@ reparam <- function(data) {
         )
         
         gas_cols <- grep(gas_pattern, names(data), value = TRUE)
-        vent_cols <- c("Q_Vent_rate_N", "Q_Vent_rate_S")
-        all_cols <- c(meta_cols, gas_cols, vent_cols[vent_cols %in% names(data)])
+        all_vars <- c(meta_cols, gas_cols, vent_cols[vent_cols %in% names(data)])
         
-        if (length(gas_cols) == 0 && !any(vent_cols %in% names(data))) {
-                stop("No gas-related or ventilation columns matched. Please check column names or patterns.")
+        if(length(gas_cols) == 0 && !any(vent_cols %in% names(data))) {
+                stop("No gas, emission, delta, ratio, or ventilation columns found in data.")
         }
         
-        df <- data %>% select(all_of(all_cols))
-        
-        long_df <- df %>%
+        df_long <- data %>%
+                select(all_of(all_vars)) %>%
                 pivot_longer(
                         cols = -all_of(meta_cols),
                         names_to = "variable",
                         values_to = "value"
                 ) %>%
                 mutate(
-                        gas = case_when(
-                                variable %in% vent_cols ~ "Q",
-                                TRUE ~ str_extract(variable, paste(gases, collapse = "|"))
-                        ),
-                        var_type = case_when(
-                                str_starts(variable, "e_") ~ "emission",
-                                str_starts(variable, "delta_") ~ "delta",
-                                gas %in% c("NHCO", "CHCO", "NHCH") ~ "ratio",
-                                variable %in% vent_cols ~ "Ventilation rate",
-                                TRUE ~ "concentration"
-                        ),
+                        value = round(value, 2),
                         location_code = str_extract(variable, "(?<=_)(in|N|S)(?=(_|$))"),
                         location = case_when(
                                 location_code == "in" ~ "Ringline inside",
                                 location_code == "N" ~ "North background",
                                 location_code == "S" ~ "South background",
                                 TRUE ~ NA_character_
+                        ),
+                        var_type = case_when(
+                                str_starts(variable, "e_") ~ "emission",
+                                str_starts(variable, "delta_") ~ "delta",
+                                str_starts(variable, "NHCO") ~ "ratio",
+                                str_starts(variable, "NHCH") ~ "ratio",
+                                str_starts(variable, "CHCO") ~ "ratio",
+                                variable %in% vent_cols ~ "ventilation",
+                                TRUE ~ "concentration"
+                        ),
+                        # Remove suffix (location code) from variable name:
+                        variable = str_remove(variable, "_(in|N|S)$"),
+                        # Add prefix c_ to base gases only for concentration var_type
+                        variable = if_else(
+                                var_type == "concentration" & variable %in% c("CO2", "CH4", "NH3"),
+                                paste0("c_", variable),
+                                variable
+                        ),
+                        # Rename ratios to human-readable form
+                        variable = case_when(
+                                variable == "NHCO" ~ "NH3/CO2",
+                                variable == "NHCH" ~ "NH3/CH4",
+                                variable == "CHCO" ~ "CH4/CO2",
+                                TRUE ~ variable
                         )
                 ) %>%
-                select(all_of(meta_cols), location, var_type, gas, value)
+                select(all_of(meta_cols), location, var_type, variable, value)
         
-        wide_gas_df <- long_df %>%
-                pivot_wider(
-                        names_from = gas,
-                        values_from = value
-                ) %>%
-                relocate(any_of(gases), Q, .after = var_type) %>%
-                mutate(
-                        DATE.TIME = as.POSIXct(DATE.TIME, format = "%Y-%m-%d %H:%M:%S"),
-                        day = as.factor(day),
-                        hour = as.factor(hour),
-                        lab = as.factor(lab),
-                        analyzer = as.factor(analyzer),
-                        location = as.factor(location),
-                        var_type = as.factor(var_type)
-                )
-        
-        return(wide_gas_df)
+        return(df_long)
 }
 
 # Development of function stat_table
@@ -197,125 +191,82 @@ HSD_table <- function(data, response_vars, group_var) {
 }
 
 # Development of function emission and concentration plot
-emiconplot <- function(data, vars, var_type_filter = NULL) {
+emiconplot <- function(data, vars = NULL, var_type_filter = NULL) {
         library(dplyr)
-        library(tidyr)
         library(ggplot2)
         library(scales)
         
-        # Check that day column exists and is Date
-        if (!"day" %in% names(data)) {
-                stop("Data must have a 'day' column for faceting.")
+        # Check for required columns
+        required_cols <- c("day", "location", "analyzer", "var_type", "variable", "value")
+        missing_cols <- setdiff(required_cols, names(data))
+        if (length(missing_cols) > 0) {
+                stop(paste("Missing columns in data:", paste(missing_cols, collapse = ", ")))
         }
+        
+        # Convert day to Date if not already
         if (!inherits(data$day, "Date")) {
                 data$day <- as.Date(data$day)
         }
+        data$day <- as.factor(data$day)
         
-        # Filter var_type if specified (single string or vector)
-        if (!is.null(var_type_filter) && "var_type" %in% names(data)) {
+        # Filter by var_type if requested
+        if (!is.null(var_type_filter)) {
                 data <- data %>% filter(var_type %in% var_type_filter)
         }
         
-        # Check all vars exist
-        missing_vars <- setdiff(vars, names(data))
-        if (length(missing_vars) > 0) {
-                stop(paste("These vars are missing in the data:", paste(missing_vars, collapse = ", ")))
+        # Filter by vars (variable names) if requested
+        if (!is.null(vars)) {
+                data <- data %>% filter(variable %in% vars)
         }
         
-        label_map <- list(
-                "concentration" = c(
-                        CO2 = "CO2 concentration",
-                        CH4 = "CH4 concentration",
-                        NH3 = "NH3 concentration"
-                ),
-                "ratio" = c(
-                        NHCO = "NH3/CO2 ratio",
-                        NHCH = "NH3/CH4 ratio",
-                        CHCO = "CH4/CO2 ratio"
-                ),
-                "Ventilation rate" = c(
-                        Q = "Ventilation rate (Q)"
-                ),
-                "emission" = c(
-                        CH4 = "CH4 emission",
-                        NH3 = "NH3 emission"
-                )
-        )
-        
-        # Set generic y axis label (always the same)
-        y_lab <- "Mean ± SE"
-        
-        # Reshape to long format
-        long_data <- data %>%
-                pivot_longer(cols = all_of(vars), names_to = "variable", values_to = "value")
-        
-        # Convert day to factor for discrete x-axis
-        long_data <- long_data %>%
-                mutate(day = as.factor(day))
-        
-        # Add variable_label for facet y-axis text
-        long_data <- long_data %>%
-                mutate(
-                        variable_label = if (!is.null(var_type_filter) && var_type_filter %in% names(label_map)) {
-                                # Use label_map for the first matching var_type_filter
-                                # If multiple var_type_filter, just pick first match for label map keys
-                                vtype <- intersect(var_type_filter, names(label_map))[1]
-                                # If variable not in map, keep original
-                                ifelse(variable %in% names(label_map[[vtype]]), label_map[[vtype]][variable], variable)
-                        } else {
-                                variable
-                        }
-                )
-        
-        # Summarise mean and SE
-        summary_data <- long_data %>%
-                group_by(day, location, analyzer, variable, variable_label) %>%
+        # Summarize mean and SE by grouping
+        summary_data <- data %>%
+                group_by(day, location, analyzer, var_type, variable) %>%
                 summarise(
                         mean_val = mean(value, na.rm = TRUE),
                         se_val = sd(value, na.rm = TRUE) / sqrt(sum(!is.na(value))),
                         .groups = "drop"
                 )
         
-        # Define analyzer colors
+        # y-axis labels by var_type
+        ylab_map <- list(
+                concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
+                ratio = "Mean ± SE (%)",
+                ventilation = expression(paste("Ventilation rate (m"^3, "/s)")),
+                emission = expression(paste("Emission (g h"^{-1}, ")"))
+        )
+        
+        categories_present <- unique(summary_data$var_type)
+        if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
+                ylab_to_use <- ylab_map[[categories_present]]
+        } else {
+                ylab_to_use <- "Mean ± SE"
+        }
+        
+        # Colors and shapes for analyzers
         analyzer_colors <- c(
-                "FTIR.1" = "#1b9e77",
-                "FTIR.2" = "#d95f02",
-                "FTIR.3" = "#7570b3", 
-                "FTIR.4" = "#e7298a",
-                "CRDS.1" = "#66a61e",
-                "CRDS.2" = "#e6ab02",
+                "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
+                "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
                 "CRDS.3" = "#a6761d"
         )
-        
         analyzer_shapes <- c(
-                "FTIR.1" = 0,  
-                "FTIR.2" = 1,  
-                "FTIR.3" = 2,  
-                "FTIR.4" = 5,   
-                "CRDS.1" = 15,   
-                "CRDS.2" = 19,   
-                "CRDS.3" = 17   
+                "FTIR.1" = 0, "FTIR.2" = 1, "FTIR.3" = 2,
+                "FTIR.4" = 5, "CRDS.1" = 15, "CRDS.2" = 19, "CRDS.3" = 17
         )
         
-        # Plot
-        p <- ggplot(summary_data, aes(x = day, y = mean_val, color = analyzer, shape = analyzer, group = analyzer)) +
-                geom_line() +
+        # Facet by variable (rows) and location (columns)
+        p <- ggplot(summary_data, aes(x = day, y = mean_val, color = analyzer, group = analyzer)) +
                 geom_point(size = 2) +
-                geom_errorbar(aes(ymin = mean_val - se_val, ymax = mean_val + se_val), width = 0.2) +
+                geom_smooth(method = "loess", se = TRUE, aes(fill = analyzer), alpha = 0.3, color = NA) +  # smooth shaded area
+                geom_line() + 
                 scale_color_manual(values = analyzer_colors) +
+                scale_fill_manual(values = analyzer_colors) +  # matching fill colors
                 scale_shape_manual(values = analyzer_shapes) +
-                facet_grid(variable_label ~ location, scales = "free_y", switch = "y") +
-                scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) + 
-                labs(
-                        x = "Day",
-                        y = y_lab,
-                        color = "Analyzer",
-                        shape = "Analyzer"
-                ) +
+                facet_grid(variable ~ location, scales = "free_y", switch = "y") +
+                labs(x = "Day", y = ylab_to_use, color = "Analyzer", shape = "Analyzer", fill = "Analyzer") +
                 theme_bw() +
-                theme(
-                        axis.text.x = element_text(angle = 45, hjust = 1)
-                )
+                theme(axis.text.x = element_text(angle = 45, hjust = 1))
+        
         
         print(p)
         return(p)
@@ -440,35 +391,28 @@ write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.c
 
 # Concentration plots (ppm)
 c_trend_plot <- emiconplot(data = emission_reshaped,
-           vars = c("CO2", "CH4", "NH3"),
+           vars = c("c_CO2", "c_CH4", "c_NH3"),
            var_type_filter = "concentration")
 
 r_trend_plot <- emiconplot(data = emission_reshaped,
-           vars = c("NHCO", "NHCH", "CHCO"),
+           vars = c("NH3/CO2", "NH3/CH4", "CH4/CO2"),
            var_type_filter = "ratio")
 
 q_trend_plot <- emiconplot(data = emission_reshaped,
-                           vars = c("Q"),
-                           var_type_filter = "Ventilation rate")
+                           vars = c("Q_Vent_rate"),
+                           var_type_filter = "ventilation")
 
 e_trend_plot <- emiconplot(data = emission_reshaped,
-                           vars = c("CH4", "NH3"),
+                           vars = c("e_CH4", "e_NH3"),
                            var_type_filter = "emission")
+
 
 # Create a named list of all your plots and desired file names
 dailyplots <- list(
-        eNH3   = eNH3,
-        eCH4   = eCH4,
-        cNH3   = cNH3,
-        cCH4   = cCH4,
-        cCO2   = cCO2,
-        r_CHCO = r_CHCO,
-        r_NHCO = r_NHCO,
-        r_NHCH = r_NHCH,
-        dNH3   = dNH3,
-        dCH4   = dCH4,
-        dCO2   = dCO2,
-        qVent  = qVent)
+        c_trend_plot = c_trend_plot,
+        r_trend_plot = r_trend_plot,
+        q_trend_plot = q_trend_plot,
+        e_trend_plot = e_trend_plot)
 
 # Save each plot using ggsave
 for (plot_name in names(dailyplots)) {
