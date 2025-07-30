@@ -159,7 +159,6 @@ stat_table <- function(data, response_vars, group_vars) {
                 )
 }
 
-
 # Development of function HSD_table
 HSD_table <- function(data, response_vars, group_var) {
         
@@ -198,55 +197,101 @@ HSD_table <- function(data, response_vars, group_var) {
 }
 
 # Development of function emission and concentration plot
-emiconplot <- function(data, variable, var_type_filter = NULL) {
+emiconplot <- function(data, vars, var_type_filter = NULL) {
         library(dplyr)
+        library(tidyr)
         library(ggplot2)
         library(scales)
         
-        # Ensure 'day' is Date class
-        if ("day" %in% names(data)) {
-                if (!inherits(data$day, "Date")) {
-                        data <- data %>% mutate(day = as.Date(as.character(day)))
-                }
-        } else {
+        # Check that day column exists and is Date
+        if (!"day" %in% names(data)) {
                 stop("Data must have a 'day' column for faceting.")
         }
+        if (!inherits(data$day, "Date")) {
+                data$day <- as.Date(data$day)
+        }
         
-        # Filter by var_type if specified
+        # Filter var_type if specified (single string or vector)
         if (!is.null(var_type_filter) && "var_type" %in% names(data)) {
-                data <- data %>% filter(var_type == var_type_filter)
+                data <- data %>% filter(var_type %in% var_type_filter)
         }
         
-        # Check variable exists
-        if (!variable %in% names(data)) {
-                stop(paste("Variable", variable, "not found in data"))
+        # Check all vars exist
+        missing_vars <- setdiff(vars, names(data))
+        if (length(missing_vars) > 0) {
+                stop(paste("These vars are missing in the data:", paste(missing_vars, collapse = ", ")))
         }
         
-        # Ensure hour is ordered factor or numeric
-        if ("hour" %in% names(data)) {
-                if (!is.numeric(data$hour)) {
-                        # Try to convert to numeric if possible
-                        suppressWarnings(num_hour <- as.numeric(as.character(data$hour)))
-                        if (all(!is.na(num_hour))) {
-                                data$hour <- num_hour
-                        } else {
-                                # Otherwise make ordered factor
-                                data$hour <- factor(data$hour, ordered = TRUE)
-                        }
+        # Create variable labels for y facets (simple, no subscripts here)
+        # You can customize or extend this mapping as needed
+        label_map <- list(
+                "concentration" = c(
+                        CO2 = "CO2",
+                        CH4 = "CH4",
+                        NH3 = "NH3",
+                        NHCO = "NHCO",
+                        NHCH = "NHCH",
+                        CHCO = "CHCO"
+                ),
+                "ratio" = c(
+                        NHCO = "NHCO",
+                        NHCH = "NHCH",
+                        CHCO = "CHCO"
+                ),
+                "ventilation rate" = c(
+                        Q = "Ventilation rate (Q)"
+                ),
+                "emission" = c(
+                        CO2 = "CO2",
+                        CH4 = "CH4",
+                        NH3 = "NH3"
+                )
+        )
+        
+        # Determine y axis label by var_type_filter
+        y_lab <- "Mean ± SE"
+        if (!is.null(var_type_filter)) {
+                if ("concentration" %in% var_type_filter) {
+                        y_lab <- expression(paste("Concentration (", mg/m^3, ") Mean ± SE"))
+                } else if ("ventilation rate" %in% var_type_filter) {
+                        y_lab <- expression(paste("Ventilation rate (", m^3, " ", h^{-1}, ") Mean ± SE"))
+                } else if ("emission" %in% var_type_filter) {
+                        y_lab <- expression(paste("Emission (", g, " ", h^{-1}, ") Mean ± SE"))
                 }
-        } else {
-                stop("Data must have an 'hour' column for x-axis.")
         }
         
-        # Summarize mean and SE by day, hour, location, analyzer
-        summary_data <- data %>%
-                group_by(day, hour, location, analyzer) %>%
+        # Reshape to long format
+        long_data <- data %>%
+                pivot_longer(cols = all_of(vars), names_to = "variable", values_to = "value")
+        
+        # Convert day to factor for discrete x-axis
+        long_data <- long_data %>%
+                mutate(day = as.factor(day))
+        
+        # Add variable_label for facet y-axis text
+        long_data <- long_data %>%
+                mutate(
+                        variable_label = if (!is.null(var_type_filter) && var_type_filter %in% names(label_map)) {
+                                # Use label_map for the first matching var_type_filter
+                                # If multiple var_type_filter, just pick first match for label map keys
+                                vtype <- intersect(var_type_filter, names(label_map))[1]
+                                # If variable not in map, keep original
+                                ifelse(variable %in% names(label_map[[vtype]]), label_map[[vtype]][variable], variable)
+                        } else {
+                                variable
+                        }
+                )
+        
+        # Summarise mean and SE
+        summary_data <- long_data %>%
+                group_by(day, location, analyzer, variable, variable_label) %>%
                 summarise(
-                        mean_val = mean(.data[[variable]], na.rm = TRUE),
-                        se_val = sd(.data[[variable]], na.rm = TRUE) / sqrt(sum(!is.na(.data[[variable]]))),
+                        mean_val = mean(value, na.rm = TRUE),
+                        se_val = sd(value, na.rm = TRUE) / sqrt(sum(!is.na(value))),
                         .groups = "drop"
                 )
         
+        # Define analyzer colors
         analyzer_colors <- c(
                 "FTIR.1" = "#1b9e77",
                 "FTIR.2" = "#d95f02",
@@ -257,22 +302,36 @@ emiconplot <- function(data, variable, var_type_filter = NULL) {
                 "CRDS.3" = "#a6761d"
         )
         
-        y_label <- variable
-        if (!is.null(var_type_filter)) y_label <- paste0(y_label, " (", var_type_filter, ")")
+        analyzer_shapes <- c(
+                "FTIR.1" = 0,  
+                "FTIR.2" = 1,  
+                "FTIR.3" = 2,  
+                "FTIR.4" = 5,   
+                "CRDS.1" = 15,   
+                "CRDS.2" = 19,   
+                "CRDS.3" = 17   
+        )
         
-        p <- ggplot(summary_data, aes(x = hour, y = mean_val, color = analyzer, group = analyzer)) +
+        #plot
+        p <- ggplot(summary_data, aes(x = day, y = mean_val, color = analyzer, shape = analyzer, group = analyzer)) +
                 geom_line() +
-                geom_point(size = 1) +
+                geom_point(size = 2) +
                 geom_errorbar(aes(ymin = mean_val - se_val, ymax = mean_val + se_val), width = 0.2) +
                 scale_color_manual(values = analyzer_colors) +
+                scale_shape_manual(values = analyzer_shapes) +
+                facet_grid(variable_label ~ location, scales = "free_y", switch = "y") +
                 labs(
-                        x = "Hour",
-                        y = y_label,
-                        color = "Analyzer"
+                        x = "Day",
+                        y = y_lab,
+                        color = "Analyzer",
+                        shape = "Analyzer"
                 ) +
-                scale_y_continuous(breaks = pretty_breaks(n = 10)) +
-                facet_grid(day ~ location, scales = "free_x") +
-                theme_bw()
+                theme_bw() +
+                theme(
+                        axis.text.x = element_text(angle = 45, hjust = 1),
+                        strip.text.y.left = element_text(angle = 0, face = "bold")
+                )
+        
         
         print(p)
         return(p)
@@ -395,73 +454,15 @@ write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 emission_reshaped <-  reparam(emission_combined) 
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
-# Emission plots (g h^-1)
-eNH3 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "NH3",
-        var_type_filter = "emission")
-
-eCH4 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "CH4",
-        var_type_filter = "emission")
-
-
 # Concentration plots (ppm)
-cNH3 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "NH3",
-        var_type_filter = "concentration")
+emiconplot(data = emission_reshaped,
+           vars = c("CO2", "CH4", "NH3"),
+           var_type_filter = "concentration")
 
-cCH4 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "CH4",
-        var_type_filter = "concentration")
+emiconplot(data = emission_reshaped,
+           vars = c("NHCO", "NHCH", "CHCO"),
+           var_type_filter = "ratio")
 
-cCO2 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "CO2",
-        var_type_filter = "concentration")
-
-
-# Ratio plots
-r_NHCO <- emiconplot(
-        data = emission_reshaped, 
-        variable = "NHCO",
-        var_type_filter = "ratio")
-
-r_CHCO <- emiconplot(
-        data = emission_reshaped, 
-        variable = "CHCO",
-        var_type_filter = "ratio")
-
-r_NHCH <- emiconplot(
-        data = emission_reshaped, 
-        variable = "NHCH",
-        var_type_filter = "ratio")
-
-
-
-# Delta plots (ppm)
-dNH3 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "NH3",
-        var_type_filter = "delta")
-
-dCH4 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "CH4",
-        var_type_filter = "delta")
-
-dCO2 <- emiconplot(
-        data = emission_reshaped, 
-        variable = "CO2",
-        var_type_filter = "delta")
-
-qVent <-  emiconplot(
-        data = emission_reshaped, 
-        variable = "Q",
-        var_type_filter = "Ventilation rate")
 
 
 # Create a named list of all your plots and desired file names
@@ -484,7 +485,7 @@ for (plot_name in names(dailyplots)) {
         ggsave(
                 filename = paste0(plot_name, ".pdf"),
                 plot = dailyplots[[plot_name]],
-                width = 14, height = 12, dpi = 600)
+                width = 16, height = 12, dpi = 600)
 }
 
 
