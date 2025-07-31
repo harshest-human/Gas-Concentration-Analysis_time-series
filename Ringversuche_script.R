@@ -289,7 +289,7 @@ input_combined <-full_join(gas_data, animal_temp, by = "DATE.TIME") %>%
 
 # Write csv
 input_combined <- input_combined %>% select(DATE.TIME, hour, everything())
-write.csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv", row.names = FALSE)
+write_excel_csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv")
 
 ######## Computation of ratios, ventilation rates and emissions #########
 # Convert DATE.TIME format
@@ -316,19 +316,22 @@ emission_combined <- emission_combined %>%
                 CHCO_S  = (CH4_S  / CO2_S)*100
         )
 
-
 # Write csv
-write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv", row.names = FALSE)
+write_excel_csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv")
 
-######## Trend Visualization ########
-# Reshape the data
+
+######## Reshape the data #########
 emission_reshaped <-  reparam(emission_combined) %>%
         mutate(
-        DATE.TIME = as.POSIXct(DATE.TIME),
-        day = as.factor(as.Date(DATE.TIME)),
-        hour = as.factor(format(DATE.TIME, "%H:00"))) 
+                DATE.TIME = as.POSIXct(DATE.TIME),
+                day = as.factor(as.Date(DATE.TIME)),
+                hour = as.factor(format(DATE.TIME, "%H:00"))) 
 
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
+
+
+######## Trend Visualization ########
+
 
 # Concentration plots (ppm)
 c_erbr_plot <- emiconplot(data = emission_reshaped,
