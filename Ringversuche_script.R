@@ -186,37 +186,31 @@ HSD_table <- function(data, response_vars, group_var) {
 }
 
 # Development of function emission and concentration plot
-emiconplot <- function(data, vars = NULL, var_type_filter = NULL) {
+emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
         library(dplyr)
         library(ggplot2)
         library(scales)
         
         # Check for required columns
-        required_cols <- c("day", "location", "analyzer", "var_type", "variable", "value")
+        required_cols <- c("location", "analyzer", "var_type", "variable", "value", x)
         missing_cols <- setdiff(required_cols, names(data))
         if (length(missing_cols) > 0) {
                 stop(paste("Missing columns in data:", paste(missing_cols, collapse = ", ")))
         }
-        
-        # Convert day to Date if not already
-        if (!inherits(data$day, "Date")) {
-                data$day <- as.Date(data$day)
-        }
-        data$day <- as.factor(data$day)
         
         # Filter by var_type if requested
         if (!is.null(var_type_filter)) {
                 data <- data %>% filter(var_type %in% var_type_filter)
         }
         
-        # Filter by vars (variable names) if requested
-        if (!is.null(vars)) {
-                data <- data %>% filter(variable %in% vars)
+        # Filter by y (variable names) if requested
+        if (!is.null(y)) {
+                data <- data %>% filter(variable %in% y)
         }
         
-        # Summarize mean and SE by grouping
+        # Summarize mean and SE by grouping over x
         summary_data <- data %>%
-                group_by(day, location, analyzer, var_type, variable) %>%
+                group_by(across(all_of(c(x, "location", "analyzer", "var_type", "variable")))) %>%
                 summarise(
                         mean_val = mean(value, na.rm = TRUE),
                         se_val = sd(value, na.rm = TRUE) / sqrt(sum(!is.na(value))),
@@ -249,8 +243,8 @@ emiconplot <- function(data, vars = NULL, var_type_filter = NULL) {
                 "FTIR.4" = 5, "CRDS.1" = 15, "CRDS.2" = 19, "CRDS.3" = 17
         )
         
-        # Facet by variable (rows) and location (columns)
-        p <- ggplot(summary_data, aes(x = day, y = mean_val, color = analyzer, shape = analyzer, group = analyzer)) +
+        # Generate plot
+        p <- ggplot(summary_data, aes_string(x = x, y = "mean_val", color = "analyzer", shape = "analyzer", group = "analyzer")) +
                 geom_line() +
                 geom_point(size = 2) +
                 geom_errorbar(aes(ymin = mean_val - se_val, ymax = mean_val + se_val), width = 0.2) +
@@ -259,7 +253,7 @@ emiconplot <- function(data, vars = NULL, var_type_filter = NULL) {
                 facet_grid(variable ~ location, scales = "free_y", switch = "y") +
                 scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
                 labs(
-                        x = "Day",
+                        x = x,
                         y = ylab_to_use,
                         color = "Analyzer",
                         shape = "Analyzer"
@@ -385,41 +379,58 @@ write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 ######## Trend Visualization ########
 # Reshape the data
-emission_reshaped <-  reparam(emission_combined) 
+emission_reshaped <-  reparam(emission_combined) %>%
+        mutate(
+        DATE.TIME = as.POSIXct(DATE.TIME),
+        day = as.factor(as.Date(DATE.TIME)),
+        hour = as.factor(format(DATE.TIME, "%H:00"))) 
+
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
 # Concentration plots (ppm)
 c_erbr_plot <- emiconplot(data = emission_reshaped,
-           vars = c("c_CO2", "c_CH4", "c_NH3"),
-           var_type_filter = "concentration")
+                          x = "hour",
+                          y = c("c_CO2", "c_CH4", "c_NH3"),
+                          var_type_filter = "concentration")
 
 r_erbr_plot <- emiconplot(data = emission_reshaped,
-           vars = c("NH3/CO2", "NH3/CH4", "CH4/CO2"),
-           var_type_filter = "ratio")
+                          x = "hour",
+                          y = c("NH3/CO2", "NH3/CH4", "CH4/CO2"),
+                          var_type_filter = "ratio")
 
 q_erbr_plot <- emiconplot(data = emission_reshaped,
-                           vars = c("Q_Vent_rate"),
-                           var_type_filter = "ventilation")
+                          x = "hour",
+                          y = c("Q_Vent_rate"),
+                          var_type_filter = "ventilation")
 
 e_erbr_plot <- emiconplot(data = emission_reshaped,
-                           vars = c("e_CH4", "e_NH3"),
-                           var_type_filter = "emission")
+                          x = "hour",
+                          y = c("e_CH4", "e_NH3"),
+                          var_type_filter = "emission")
 
 
-# Create a named list of all your plots and desired file names
+# Named list of plots
 dailyplots <- list(
         c_erbr_plot = c_erbr_plot,
         r_erbr_plot = r_erbr_plot,
         q_erbr_plot = q_erbr_plot,
         e_erbr_plot = e_erbr_plot)
 
-# Save each plot using ggsave
+# Corresponding size settings (width, height)
+plot_sizes <- list(
+        c_erbr_plot = c(15.5, 8.75),
+        r_erbr_plot = c(15.5, 8.75),
+        q_erbr_plot = c(13.5, 5.12),
+        e_erbr_plot = c(12.69, 8.44))
+
+# Save each plot using its specific size
 for (plot_name in names(dailyplots)) {
+        size <- plot_sizes[[plot_name]]
         ggsave(
                 filename = paste0(plot_name, ".pdf"),
                 plot = dailyplots[[plot_name]],
-                width = 8, height = 8, dpi = 300)
-}
+                width = size[1], height = size[2], dpi = 300)
+        }
 
 
 ######## Stats Visualization ########
