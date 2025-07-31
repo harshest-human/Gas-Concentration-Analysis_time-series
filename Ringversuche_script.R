@@ -259,8 +259,9 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                         color = "Analyzer",
                         shape = "Analyzer"
                 ) +
-                theme_bw() +
-                theme(axis.text.x = element_text(angle = 45, hjust = 1))
+                theme_classic() +
+                theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      panel.border = element_rect(colour = "black", fill = NA))
         
         print(p)
         return(p)
@@ -347,10 +348,10 @@ emicorrgram <- function(data, target_variable) {
                         name = "Correlation"
                 ) +
                 labs(title = title_label, x = NULL, y = NULL) +
-                theme_classic(base_size = 12) +
+                theme_classic() +
                 theme(
                         axis.text.x = element_text(angle = 45, hjust = 1),
-                        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5)
+                        panel.border = element_rect(colour = "black", fill = NA)
                 ) +
                 facet_wrap(~ side)
         
