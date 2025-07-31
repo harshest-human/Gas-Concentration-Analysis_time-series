@@ -320,63 +320,6 @@ emission_combined <- emission_combined %>%
 # Write csv
 write.csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv", row.names = FALSE)
 
-######## Statistical Analysis ########
-# list variables
-cvars <- c(
-        "CO2_in", "CH4_in", "NH3_in",
-        "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S"
-)
-
-dvars <- c(
-        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
-        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S"
-)
-
-evars <- c(
-        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S"
-)
-
-qvars <- c(
-        "Q_Vent_rate_N", "Q_Vent_rate_S"
-)
-
-rvars <- c(
-        "NHCO_in", "NHCO_N", "NHCO_S",
-        "CHCO_in", "CHCO_N", "CHCO_S",
-        "NHCH_in", "NHCH_N", "NHCH_S"
-)
-
-
-vars <- c(
-        "CO2_in", "CH4_in", "NH3_in",
-        "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S",
-        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
-        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S",
-        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
-        "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "NHCO_in", "NHCO_N", "NHCO_S",
-        "CHCO_in", "CHCO_N", "CHCO_S",
-        "NHCH_in", "NHCH_N", "NHCH_S"
-        )
-
-# Tukey HSD
-# Remove rows where any response variable has NA/NaN/Inf
-emission_clean <- emission_combined %>%
-        filter(if_all(all_of(vars), ~ !is.na(.) & is.finite(.)))
-
-# Then perform Tukey HSD
-result_HSD_summary <- HSD_table(
-        data = emission_clean,
-        response_vars = vars,
-        group_var = "analyzer"
-)
-
-# Save the result
-write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
-
-
 ######## Trend Visualization ########
 # Reshape the data
 emission_reshaped <-  reparam(emission_combined) %>%
@@ -432,8 +375,62 @@ for (plot_name in names(dailyplots)) {
                 width = size[1], height = size[2], dpi = 300)
         }
 
+######## Statistical Analysis ########
+# list variables
+cvars <- c(
+        "CO2_in", "CH4_in", "NH3_in",
+        "CO2_N", "CH4_N", "NH3_N",
+        "CO2_S", "CH4_S", "NH3_S"
+)
 
-######## Stats Visualization ########
+dvars <- c(
+        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
+        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S"
+)
+
+evars <- c(
+        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S"
+)
+
+qvars <- c(
+        "Q_Vent_rate_N", "Q_Vent_rate_S"
+)
+
+rvars <- c(
+        "NHCO_in", "NHCO_N", "NHCO_S",
+        "CHCO_in", "CHCO_N", "CHCO_S",
+        "NHCH_in", "NHCH_N", "NHCH_S"
+)
+
+
+vars <- c(
+        "CO2_in", "CH4_in", "NH3_in",
+        "CO2_N", "CH4_N", "NH3_N",
+        "CO2_S", "CH4_S", "NH3_S",
+        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
+        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S",
+        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
+        "Q_Vent_rate_N", "Q_Vent_rate_S",
+        "NHCO_in", "NHCO_N", "NHCO_S",
+        "CHCO_in", "CHCO_N", "CHCO_S",
+        "NHCH_in", "NHCH_N", "NHCH_S"
+)
+
+# Tukey HSD
+# Remove rows where any response variable has NA/NaN/Inf
+emission_clean <- emission_combined %>%
+        filter(if_all(all_of(vars), ~ !is.na(.) & is.finite(.)))
+
+# Then perform Tukey HSD
+result_HSD_summary <- HSD_table(
+        data = emission_clean,
+        response_vars = vars,
+        group_var = "analyzer"
+)
+
+# Save the result
+write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
+
 # Calculate mean, sd and cv
 c_stat_sum <- stat_table(
         data = emission_reshaped,
@@ -456,25 +453,6 @@ readr::write_excel_csv(d_stat_sum, "d_stat_summary.csv")
 readr::write_excel_csv(e_stat_sum, "e_stat_summary.csv")
 readr::write_excel_csv(q_stat_sum, "q_stat_summary.csv")
 
-
-# Named list of plots with specific dimensions
-statplots <- list(
-        concentration_boxplot = list(plot = c_boxplot, width = 12, height = 10),
-        delta_boxplot         = list(plot = d_boxplot, width = 12, height = 10),
-        emission_boxplot      = list(plot = e_boxplot, width = 8, height = 6),
-        ventilation_boxplot   = list(plot = q_boxplot, width = 8,  height = 4)
-)
-
-# Save plots with their specific sizes
-for (plot_name in names(statplots)) {
-        ggsave(
-                filename = paste0(plot_name, ".pdf"),
-                plot     = statplots[[plot_name]]$plot,
-                width    = statplots[[plot_name]]$width,
-                height   = statplots[[plot_name]]$height,
-                dpi      = 600
-        )
-}
 
 ########## Correlograms ##############
 # Change pivot to wide
