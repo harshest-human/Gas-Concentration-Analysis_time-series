@@ -15,6 +15,7 @@ library(rlang)
 library(DescTools)
 library(rstatix)
 library(ggcorrplot)
+library(patchwork)
 library(networkD3)
 
 ######## Development of functions #######
@@ -27,12 +28,12 @@ indirect.CO2.balance <- function(df) {
                         h_min = 2.9,
                         hour = hour(DATE.TIME),
                         
-                        A_corr = 1 - a * 3 * sin((2 * pi / 24) * (hour + 6 - h_min)),
+                        A_cor = 1 - a * 3 * sin((2 * pi / 24) * (hour + 6 - h_min)),
                         Phi_tot = 5.6 * (m_weight ^ 0.75) + 22 * Y1_milk_prod + 1.6e-5 * (p_pregnancy_day ^ 3),
-                        Phi_T_corr = Phi_tot * (1 + 4e-5 * (20 - Temperature)^3),
-                        hpu_T_A_corr_all_animal = ((Phi_T_corr / 1000) * A_corr) * n_animals,
+                        Phi_T_cor = Phi_tot * (1 + 4e-5 * (20 - Temperature)^3),
+                        hpu_T_A_cor_all_animal = ((Phi_T_cor / 1000) * A_cor) * n_animals,
                         n_LU = (n_animals * m_weight) / 500,
-                        P_CO2_T_A_all_animal = hpu_T_A_corr_all_animal * P_CO2_term,
+                        P_CO2_T_A_all_animal = hpu_T_A_cor_all_animal * P_CO2_term,
                         
                         # Delta in ppm (original concentration differences)
                         delta_NH3_N = NH3_in - NH3_N,
@@ -265,6 +266,97 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
         return(p)
 }
 
+# Development of function correlogram plot
+emicorrgram <- function(data, target_variable) {
+        library(dplyr)
+        library(tidyr)
+        library(ggplot2)
+        library(scales)
+        
+        # Step 1: Filter & assign side
+        filtered <- data %>%
+                filter(variable == target_variable) %>%
+                mutate(
+                        side = case_when(
+                                grepl("North", location, ignore.case = TRUE) ~ "North",
+                                grepl("South", location, ignore.case = TRUE) ~ "South",
+                                TRUE ~ NA_character_
+                        )
+                ) %>%
+                filter(!is.na(side)) %>%
+                select(DATE.TIME, analyzer, side, var_type, value)
+        
+        # Get var_type label for legend/title
+        vtype <- unique(filtered$var_type)
+        vtype <- ifelse(length(vtype) == 1, vtype, "Value")
+        title_label <- paste0("Correlation of ", target_variable, " (", vtype, ")")
+        
+        # Step 2: Compute correlation for each side and reshape long
+        cor_long <- filtered %>%
+                group_by(side) %>%
+                group_modify(~ {
+                        pivoted <- .x %>%
+                                pivot_wider(names_from = analyzer, values_from = value) %>%
+                                select(-DATE.TIME) %>%
+                                mutate(across(everything(), as.numeric))
+                        
+                        cor_mat <- cor(pivoted, use = "pairwise.complete.obs")
+                        cor_mat[upper.tri(cor_mat, diag = TRUE)] <- NA
+                        
+                        as.data.frame(as.table(cor_mat)) %>%
+                                filter(!is.na(Freq)) %>%
+                                rename(Var1 = Var1, Var2 = Var2, correlation = Freq)
+                }) %>%
+                ungroup()
+        
+        # Define breaks and matching colors (11 each)
+        breaks <- seq(-1, 1, length.out = 21)
+        
+        colors <- c(
+                "darkred",    # -1.0
+                "darkred",    # -0.9
+                "darkred",    # -0.8
+                "orangered4", # -0.7
+                "orangered4", # -0.6
+                "orangered3", # -0.5
+                "orangered3", # -0.4
+                "orangered3", # -0.3
+                "orangered2", # -0.2
+                "orange",     # -0.1
+                "white",      #  0.0
+                "yellow",     #  0.05
+                "yellow",     #  0.1
+                "yellow",     #  0.2
+                "gold",       #  0.3
+                "gold",       #  0.4
+                "gold",       #  0.5
+                "gold3",      #  0.6
+                "green3",     #  0.7
+                "green4",     #  0.8
+                "darkgreen"   #  1.0
+        )
+        values <- scales::rescale(breaks, to = c(0, 1))
+        
+        p <- ggplot(cor_long, aes(x = Var1, y = Var2, fill = correlation)) +
+                geom_tile(color = "white") +
+                geom_text(aes(label = round(correlation, 2)), size = 3) +
+                scale_fill_gradientn(
+                        colors = colors,
+                        values = values,
+                        limits = c(-1, 1),
+                        name = "Correlation"
+                ) +
+                labs(title = title_label, x = NULL, y = NULL) +
+                theme_classic(base_size = 12) +
+                theme(
+                        axis.text.x = element_text(angle = 45, hjust = 1),
+                        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5)
+                ) +
+                facet_wrap(~ side)
+        
+        print(p)
+}
+
 ######## Import Gas Data #########
 # Load animal and temperature data
 animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
@@ -331,9 +423,6 @@ write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.c
 
 
 ######## Trend Visualization ########
-
-
-# Concentration plots (ppm)
 c_erbr_plot <- emiconplot(data = emission_reshaped,
                           x = "hour",
                           y = c("c_CO2", "c_CH4", "c_NH3"),
@@ -354,7 +443,6 @@ e_erbr_plot <- emiconplot(data = emission_reshaped,
                           y = c("e_CH4", "e_NH3"),
                           var_type_filter = "emission")
 
-
 # Named list of plots
 dailyplots <- list(
         c_erbr_plot = c_erbr_plot,
@@ -362,7 +450,7 @@ dailyplots <- list(
         q_erbr_plot = q_erbr_plot,
         e_erbr_plot = e_erbr_plot)
 
-# Corresponding size settings (width, height)
+# coresponding size settings (width, height)
 plot_sizes <- list(
         c_erbr_plot = c(15.5, 8.75),
         r_erbr_plot = c(15.5, 8.75),
@@ -377,6 +465,7 @@ for (plot_name in names(dailyplots)) {
                 plot = dailyplots[[plot_name]],
                 width = size[1], height = size[2], dpi = 300)
         }
+
 
 ######## Statistical Analysis ########
 # list variables
@@ -458,41 +547,15 @@ readr::write_excel_csv(q_stat_sum, "q_stat_summary.csv")
 
 
 ########## Correlograms ##############
-# Change pivot to wide
-eNH3_matrix <- emission_combined %>%
-        select(DATE.TIME, analyzer, e_NH3_N) %>%
-        pivot_wider(names_from = analyzer, values_from = e_NH3_N)
+# Plotting by function
+e_NH3_corrgram <- emicorrgram(emission_reshaped, target_variable = "e_NH3")
+e_CH4_corrgram <- emicorrgram(emission_reshaped, target_variable = "e_CH4")
+q_vent_corrgram <- emicorrgram(emission_reshaped, target_variable = "Q_Vent_rate")
 
-# Remove DATE.Time column
-eNH3_matrix <- eNH3_matrix %>% select(-DATE.TIME)
-
-# Compute correlation matrix (pairwise complete to allow NAs)
-eNH3_matrix <- cor(eNH3_matrix, use = "pairwise.complete.obs")
-
-# Plot the correlogram
-ggcorrplot(eNH3_matrix, method = "circle", type = "lower", lab = TRUE,
-           title = "Correlation of e_NH3_N Across Analyzers")
-
-
-# Change pivot to wide
-eCH4_matrix <- emission_combined %>%
-        select(DATE.TIME, analyzer, e_CH4_N) %>%
-        pivot_wider(names_from = analyzer, values_from = e_CH4_N)
-
-# Remove DATE.Time column
-eCH4_matrix <- eCH4_matrix %>% select(-DATE.TIME)
-
-# Compute correlation matrix (pairwise complete to allow NAs)
-eCH4_matrix <- cor(eCH4_matrix, use = "pairwise.complete.obs")
-
-# Plot the correlogram
-ggcorrplot(eCH4_matrix, method = "circle", type = "lower", lab = TRUE,
-           title = "Correlation of e_CH4_N Across Analyzers")
-
-
-
-result <- stat_table(emission_reshaped, c("CO2", "CH4", "NH3", "Q"), c("var_type", "location"))
-
+# Save as PDFs
+ggsave("e_NH3_corrgram.pdf", plot = e_NH3_corrgram, width = 10, height = 5, dpi = 300)
+ggsave("e_CH4_corrgram.pdf", plot = e_CH4_corrgram, width = 10, height = 5, dpi = 300)
+ggsave("q_vent_corrgram.pdf", plot = q_vent_corrgram, width = 10, height = 5, dpi = 300)
 
 
 ################# Sankey diagram ##############
