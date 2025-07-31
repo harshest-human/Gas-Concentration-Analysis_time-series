@@ -137,18 +137,13 @@ stat_table <- function(data, response_vars, group_vars) {
         require(DescTools)
         
         data %>%
-                group_by(across(all_of(group_vars))) %>%
+                filter(variable %in% response_vars) %>%
+                group_by(across(all_of(group_vars)), variable) %>%
                 summarise(
                         n = n(),
-                        across(
-                                all_of(response_vars),
-                                list(
-                                        mean = ~round(mean(., na.rm = TRUE), 2),
-                                        sd   = ~round(sd(., na.rm = TRUE), 2),
-                                        cv   = ~round(DescTools::CoefVar(., na.rm = TRUE) * 100, 2)
-                                ),
-                                .names = "{.fn}_{.col}"
-                        ),
+                        mean = round(mean(value, na.rm = TRUE), 2),
+                        sd = round(sd(value, na.rm = TRUE), 2),
+                        cv = round(DescTools::CoefVar(value, na.rm = TRUE) * 100, 2),
                         .groups = "drop"
                 )
 }
@@ -430,10 +425,24 @@ for (plot_name in names(dailyplots)) {
 ######## Stats Visualization ########
 # Concentration long
 # Calculate mean, sd and cv
-c_stat_sum <- stat_table(emission_reshaped, response_vars = "concentration", group_var = c("analyzer", "location", "var_type", "variable"))%>% filter(analyzer != "FTIR.4")
+# Concentration long format
+c_long <- emission_reshaped %>%
+        filter(var_type == "concentration") %>%
+        select(DATE.TIME, analyzer, location, variable, value) %>%
+        drop_na(value)
+
+# Summarize stats for concentration gases
+c_stat_sum <- stat_table(
+        data = c_long,
+        response_vars = c("c_CO2", "c_CH4", "c_NH3"),
+        group_vars = c("analyzer", "location")
+) %>%
+        rename(gas = variable, cv_concentration = cv)
+
+# Heatmap of CV by analyzer and location, faceted by gas
 ggplot(c_stat_sum, aes(x = location, y = analyzer, fill = cv_concentration)) +
         geom_tile(color = "white") +
-        facet_wrap(~gas) +
+        facet_wrap(~ gas) +
         scale_fill_gradient(low = "white", high = "red", name = "CV (%)") +
         theme_light(base_size = 14) +
         theme(
@@ -446,7 +455,7 @@ ggplot(c_stat_sum, aes(x = location, y = analyzer, fill = cv_concentration)) +
                 y = "Analyzer"
         )
 
-# Create barplot
+# Barplot CV by location, faceted by analyzer
 ggplot(c_stat_sum, aes(x = gas, y = cv_concentration, fill = location)) +
         geom_bar(stat = "identity", position = "dodge") +
         facet_wrap(~ analyzer) +
@@ -457,32 +466,39 @@ ggplot(c_stat_sum, aes(x = gas, y = cv_concentration, fill = location)) +
         ) +
         theme_light()
 
-
-
-c_boxplot <- ggplot(c_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
-        geom_boxplot(outliers = FALSE) +
+# Boxplot for concentration data
+c_boxplot <- ggplot(c_long, aes(x = analyzer, y = value, fill = analyzer)) +
+        geom_boxplot(outlier.shape = NA) +
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
-        facet_grid(gas ~ location, scales = "free_y") + 
-        labs(title = "CO2, CH4 and NH3 Mean Concentration by Analyzer and Location",
-             y = "(Concentration) [ppm]",
-             fill = "Analyzer") +
-        theme_bw() + theme(legend.position = "top")
+        facet_grid(variable ~ location, scales = "free_y") +
+        labs(
+                title = "CO2, CH4 and NH3 Mean Concentration by Analyzer and Location",
+                y = "(Concentration) [ppm]",
+                fill = "Analyzer"
+        ) +
+        theme_bw() +
+        theme(legend.position = "top")
 
-# Delta long
+print(c_boxplot)
+
+
+# Delta long (same principle)
 d_long <- emission_reshaped %>%
         filter(var_type == "delta") %>%
-        select(DATE.TIME, analyzer, location, CO2, CH4, NH3) %>%
-        pivot_longer(cols = c(CO2, CH4, NH3), names_to = "gas", values_to = "concentration") %>%
-        drop_na(concentration)
+        select(DATE.TIME, analyzer, location, variable, value) %>%
+        drop_na(value)
 
-# Calculate mean, sd, and cv for delta concentrations
-d_stat_sum <- stat_table(d_long, response_vars = "concentration", group_var = c("analyzer", "location", "gas"))
+d_stat_sum <- stat_table(
+        data = d_long,
+        response_vars = c("CO2", "CH4", "NH3"),
+        group_vars = c("analyzer", "location")
+) %>%
+        rename(gas = variable, cv_concentration = cv)
 
-# Boxplot for delta concentrations
-d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer)) +
-        geom_boxplot(outliers = FALSE) +
+d_boxplot <- ggplot(d_long, aes(x = analyzer, y = value, fill = analyzer)) +
+        geom_boxplot(outlier.shape = NA) +
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
-        facet_grid(gas ~ location, scales = "free_y") + 
+        facet_grid(variable ~ location, scales = "free_y") +
         labs(
                 title = "Delta Concentrations of CO2, CH4, and NH3 by Analyzer and Location",
                 y = "(Delta Concentration) [ppm]",
@@ -491,21 +507,26 @@ d_boxplot <- ggplot(d_long, aes(x = analyzer, y = concentration, fill = analyzer
         theme_bw() +
         theme(legend.position = "top")
 
+print(d_boxplot)
+
+
 # Emission long
 e_long <- emission_reshaped %>%
         filter(var_type == "emission") %>%
-        select(DATE.TIME, analyzer, location, CH4, NH3) %>%
-        pivot_longer(cols = c(CH4, NH3), names_to = "gas", values_to = "emission") %>%
-        drop_na(emission)
+        select(DATE.TIME, analyzer, location, variable, value) %>%
+        drop_na(value)
 
-# Calculate mean, sd, and cv for emissions
-e_stat_sum <- stat_table(e_long, response_vars = "emission", group_var = c("analyzer", "location", "gas"))
+e_stat_sum <- stat_table(
+        data = e_long,
+        response_vars = c("CH4", "NH3"),
+        group_vars = c("analyzer", "location")
+) %>%
+        rename(gas = variable, cv_concentration = cv)
 
-# Boxplot for emissions
-e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
-        geom_boxplot(outliers = FALSE) +
+e_boxplot <- ggplot(e_long, aes(x = analyzer, y = value, fill = analyzer)) +
+        geom_boxplot(outlier.shape = NA) +
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
-        facet_grid(gas ~ location, scales = "free_y") +
+        facet_grid(variable ~ location, scales = "free_y") +
         labs(
                 title = "Emissions of CH4 and NH3 by Analyzer and Location",
                 fill = "Analyzer"
@@ -513,19 +534,24 @@ e_boxplot <- ggplot(e_long, aes(x = analyzer, y = emission, fill = analyzer)) +
         theme_bw() +
         theme(legend.position = "top")
 
+print(e_boxplot)
 
-# Ventilation rate long
+
+# Ventilation long
 q_long <- emission_reshaped %>%
         filter(var_type == "Ventilation rate") %>%
-        select(DATE.TIME, analyzer, location, Q) %>%
-        drop_na(Q)
+        select(DATE.TIME, analyzer, location, variable, value) %>%
+        drop_na(value)
 
-# Calculate mean, sd, and cv for ventilation rate
-q_stat_sum <- stat_table(q_long, response_vars = "Q", group_var = c("analyzer", "location"))
+q_stat_sum <- stat_table(
+        data = q_long,
+        response_vars = "Q",
+        group_vars = c("analyzer", "location")
+) %>%
+        rename(cv_concentration = cv) # rename cv as needed
 
-# Boxplot for ventilation rate
-q_boxplot <- ggplot(q_long, aes(x = analyzer, y = Q, fill = analyzer)) +
-        geom_boxplot(outlier.shape = NA) + 
+q_boxplot <- ggplot(q_long, aes(x = analyzer, y = value, fill = analyzer)) +
+        geom_boxplot(outlier.shape = NA) +
         stat_summary(fun = mean, geom = "point", shape = 23, size = 2, fill = "yellow") +
         facet_wrap(~ location) +
         labs(
@@ -535,6 +561,8 @@ q_boxplot <- ggplot(q_long, aes(x = analyzer, y = Q, fill = analyzer)) +
         ) +
         theme_bw() +
         theme(legend.position = "top")
+
+print(q_boxplot)
 
 # Write stat summary as csv
 readr::write_excel_csv(c_stat_sum, "c_stat_summary.csv")
