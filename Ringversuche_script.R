@@ -219,8 +219,8 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                 )
         
         ylab_map <- list(
-                concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
-                ratio = "Mean ± SE (%)",
+                concentration = expression(paste("Mean ± SD (mg ", m^{-3}, ")")),
+                ratio = "Mean ± SD (%)",
                 ventilation = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),  # <- changed from m^3/s to m^-3 s^-1
                 emission = expression(paste("Emission (g h"^{-1}, ")"))
         )
@@ -230,7 +230,7 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
         if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
                 ylab_to_use <- ylab_map[[categories_present]]
         } else {
-                ylab_to_use <- "Mean ± SE"
+                ylab_to_use <- "Mean ± SD"
         }
         
         analyzer_colors <- c(
@@ -304,8 +304,8 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
         
         # y-axis labels by var_type from emiconplot style
         ylab_map <- list(
-                concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
-                ratio = "Mean ± SE (%)",
+                concentration = expression(paste("Mean ± SD (mg ", m^{-3}, ")")),
+                ratio = "Mean ± SD (%)",
                 ventilation = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),
                 emission = expression(paste("Emission (g h"^{-1}, ")"))
         )
@@ -525,7 +525,7 @@ result_HSD_summary <- HSD_table(data = emission_clean,
 write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 
-######## Hourly Mean ± SE Trend Plots ########
+######## Hourly Mean ± SD Trend Plots ########
 c_erbr_plot <- emiconplot(data = emission_reshaped,
                           x = "hour",
                           y = c("c_CO2", "c_CH4", "c_NH3"),
