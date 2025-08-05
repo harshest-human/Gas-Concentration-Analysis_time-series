@@ -402,11 +402,6 @@ emiheatmap <- function(data, response_vars, group_var = "analyzer") {
         
         data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
         
-        # Compute min, max, and 5 equally spaced breaks for CV
-        cv_min <- floor(min(data_sub$cv, na.rm = TRUE))
-        cv_max <- ceiling(max(data_sub$cv, na.rm = TRUE))
-        cv_breaks <- pretty(c(cv_min, cv_max), n = 4)  # auto-generates 5 nice breaks
-        
         # Plot
         p <- ggplot(data_sub, aes(x = factor(hour), y = !!sym(group_var), fill = cv)) +
                 geom_tile(color = "black") +
@@ -414,12 +409,12 @@ emiheatmap <- function(data, response_vars, group_var = "analyzer") {
                 scale_fill_viridis_c(
                         option = "plasma",
                         name = "CV (%)",
-                        limits = c(min(cv_breaks), max(cv_breaks)),
-                        breaks = cv_breaks,
+                        limits = c(0, 200),
+                        breaks = seq(0, 200, 50),
                         oob = scales::squish,
                         guide = guide_colorbar(
-                                barwidth = 8,
-                                barheight = 0.5,
+                                barwidth = 10,
+                                barheight = 0.6,
                                 title.position = "top",
                                 title.hjust = 0.5
                         )
@@ -673,10 +668,9 @@ q_boxplot <- emiboxplot(data = emission_reshaped,
 # Save e_boxplot
 ggsave(filename = "e_boxplot.pdf",
        plot = e_boxplot,
-       width = 13, height = 8.5, dpi = 300)
+       width = 13.5, height = 8.5, dpi = 300)
 
 # Save q_boxplot
 ggsave(filename = "q_boxplot.pdf",
        plot = q_boxplot,
-       width = 13, height = 5.8, dpi = 300)
-
+       width = 13.5, height = 5.8, dpi = 300)
