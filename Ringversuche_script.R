@@ -27,11 +27,13 @@ library(viridis)
 indirect.CO2.balance <- function(df) {
         df %>%
                 mutate(
+                        # Constants and time component
                         P_CO2_term = 0.185,
                         a = 0.22,
                         h_min = 2.9,
                         hour = hour(DATE.TIME),
                         
+                        # Correction factors and animal-level CO2 production
                         A_cor = 1 - a * 3 * sin((2 * pi / 24) * (hour + 6 - h_min)),
                         Phi_tot = 5.6 * (m_weight ^ 0.75) + 22 * Y1_milk_prod + 1.6e-5 * (p_pregnancy_day ^ 3),
                         Phi_T_cor = Phi_tot * (1 + 4e-5 * (20 - Temperature)^3),
@@ -39,7 +41,7 @@ indirect.CO2.balance <- function(df) {
                         n_LU = (n_animals * m_weight) / 500,
                         P_CO2_T_A_all_animal = hpu_T_A_cor_all_animal * P_CO2_term,
                         
-                        # Delta in ppm (original concentration differences)
+                        # Concentration differences (ppm)
                         delta_NH3_N = NH3_in - NH3_N,
                         delta_CH4_N = CH4_in - CH4_N,
                         delta_CO2_N = CO2_in - CO2_N,
@@ -48,19 +50,51 @@ indirect.CO2.balance <- function(df) {
                         delta_CH4_S = CH4_in - CH4_S,
                         delta_CO2_S = CO2_in - CO2_S,
                         
-                        # Ventilation rate North
+                        # Ventilation rate (m³/h)
                         Q_Vent_rate_N = P_CO2_T_A_all_animal / ((delta_CO2_N) * 1e-6),
-                        # Ventilation rate South
                         Q_Vent_rate_S = P_CO2_T_A_all_animal / ((delta_CO2_S) * 1e-6),
                         
-                        # Emissions North
+                        # Emissions (g/h)
                         e_NH3_N = (delta_NH3_N * Q_Vent_rate_N) / 1000,
                         e_CH4_N = (delta_CH4_N * Q_Vent_rate_N) / 1000,
-                        
-                        # Emissions South
                         e_NH3_S = (delta_NH3_S * Q_Vent_rate_S) / 1000,
                         e_CH4_S = (delta_CH4_S * Q_Vent_rate_S) / 1000,
-                        )
+                        
+                        # NH3 to CO2 ratios (%)
+                        NHCO_in = (NH3_in / CO2_in) * 100,
+                        NHCO_N  = (NH3_N  / CO2_N) * 100,
+                        NHCO_S  = (NH3_S  / CO2_S) * 100,
+                        
+                        # NH3 to CH4 ratios (%)
+                        NHCH_in = (NH3_in / CH4_in) * 100,
+                        NHCH_N  = (NH3_N  / CH4_N) * 100,
+                        NHCH_S  = (NH3_S  / CH4_S) * 100,
+                        
+                        # CH4 to CO2 ratios (%)
+                        CHCO_in = (CH4_in / CO2_in) * 100,
+                        CHCO_N  = (CH4_N  / CO2_N) * 100,
+                        CHCO_S  = (CH4_S  / CO2_S) * 100
+                )
+}
+
+# Development of function relative error calculator
+emirror <- function(df, vars) {
+        # Columns to keep besides vars
+        meta_cols <- c("DATE.TIME", "hour", "day", "lab", "analyzer")
+        
+        # Select only meta_cols + vars from df
+        df_selected <- df %>% select(all_of(c(meta_cols, vars)))
+        
+        # Compute relative errors only on vars
+        df_result <- df_selected %>%
+                mutate(across(
+                        all_of(vars),
+                        ~ (. - mean(., na.rm = TRUE)) / mean(., na.rm = TRUE) * 100,
+                        .names = "Err_{.col}"
+                ))%>%
+                mutate(across(where(is.numeric) & !any_of(c("hour")), ~ round(.x, 2)))
+        
+        return(df_result)
 }
 
 # Development of function reshape parameters
@@ -70,25 +104,32 @@ reparam <- function(data) {
         library(stringr)
         
         meta_cols <- c("DATE.TIME", "day", "hour", "lab", "analyzer")
+        
+        # Patterns for gases and ventilation columns
         gases <- c("CO2", "CH4", "NH3", "NHCO", "NHCH", "CHCO")
         vent_cols <- c("Q_Vent_rate_N", "Q_Vent_rate_S")
         
-        gas_pattern <- paste0(
-                "(",
-                paste(c(
-                        paste0("^", gases, "_(in|N|S)$"),
-                        paste0("^delta_", c("CO2", "CH4", "NH3"), "_(N|S)$"),
-                        paste0("^e_", c("CO2", "CH4", "NH3"), "_(N|S)$")
-                ), collapse = "|"),
-                ")"
+        # Pattern to select relevant columns (including prefixed ones)
+        pattern <- paste0(
+                "^(", paste(c(
+                        # gases with suffixes
+                        paste0(gases, "_(in|N|S)$"),
+                        # prefixed variables
+                        paste0("delta_(", gases[1:3], ")_(N|S)$"),
+                        paste0("e_(", gases[3:2], ")_(N|S)$"),  # e_NH3, e_CH4 emissions
+                        paste0("Q_Vent_rate_(N|S)$"),
+                        # errors for gases, delta, emissions, ventilation
+                        paste0("Err_(", gases, ")_(in|N|S)$"),
+                        paste0("Err_delta_(", gases[1:3], ")_(N|S)$"),
+                        paste0("Err_e_(", gases[3:2], ")_(N|S)$"),
+                        paste0("Err_Q_Vent_rate_(N|S)$")
+                ), collapse = "|"), ")$"
         )
         
-        gas_cols <- grep(gas_pattern, names(data), value = TRUE)
-        all_vars <- c(meta_cols, gas_cols, vent_cols[vent_cols %in% names(data)])
+        # Select columns matching pattern
+        cols_to_use <- grep(pattern, names(data), value = TRUE)
         
-        if(length(gas_cols) == 0 && !any(vent_cols %in% names(data))) {
-                stop("No gas, emission, delta, ratio, or ventilation columns found in data.")
-        }
+        all_vars <- c(meta_cols, cols_to_use)
         
         df_long <- data %>%
                 select(all_of(all_vars)) %>%
@@ -106,28 +147,27 @@ reparam <- function(data) {
                                 location_code == "S" ~ "South background",
                                 TRUE ~ NA_character_
                         ),
+                        
                         var_type = case_when(
                                 str_starts(variable, "e_") ~ "emission",
                                 str_starts(variable, "delta_") ~ "delta",
-                                str_starts(variable, "NHCO") ~ "ratio",
-                                str_starts(variable, "NHCH") ~ "ratio",
-                                str_starts(variable, "CHCO") ~ "ratio",
-                                variable %in% vent_cols ~ "ventilation",
+                                str_starts(variable, "Err_") ~ "error",
+                                str_detect(variable, paste0("^(", paste(gases[c(4,5,6)], collapse = "|"), ")_")) ~ "ratio",
+                                str_starts(variable, "Q_Vent_rate") ~ "ventilation",
                                 TRUE ~ "concentration"
                         ),
-                        # Remove suffix (location code) from variable name:
+                        
+                        # Clean suffix only: remove the location suffix _in, _N, _S for clarity
                         variable = str_remove(variable, "_(in|N|S)$"),
-                        # Add prefix c_ to base gases only for concentration var_type
-                        variable = if_else(
-                                var_type == "concentration" & variable %in% c("CO2", "CH4", "NH3"),
-                                paste0("c_", variable),
-                                variable
-                        ),
-                        # Rename ratios to human-readable form
+                        
+                        # Replace ratio names with more readable forms
                         variable = case_when(
                                 variable == "NHCO" ~ "NH3/CO2",
                                 variable == "NHCH" ~ "NH3/CH4",
                                 variable == "CHCO" ~ "CH4/CO2",
+                                variable == "Err_NHCO" ~ "Err_NH3/CO2",
+                                variable == "Err_NHCH" ~ "Err_NH3/CH4",
+                                variable == "Err_CHCO" ~ "Err_CH4/CO2",
                                 TRUE ~ variable
                         )
                 ) %>%
@@ -137,11 +177,17 @@ reparam <- function(data) {
 }
 
 # Development of function stat_table
-stat_table <- function(data, response_vars, group_vars) {
+stat_table <- function(data, response_vars, group_vars, var_type_filter = NULL) {
         require(dplyr)
         require(DescTools)
         
-        data %>%
+        df <- data
+        
+        if (!is.null(var_type_filter)) {
+                df <- df %>% filter(var_type %in% var_type_filter)
+        }
+        
+        df %>%
                 filter(variable %in% response_vars) %>%
                 group_by(across(all_of(c("hour", group_vars))), variable) %>%
                 summarise(
@@ -240,13 +286,14 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                         .groups = "drop"
                 )
         
+        # Default y-axis labels
         ylab_map <- list(
                 concentration = expression(paste("Mean ± SD (mg ", m^{-3}, ")")),
-                ratio = "Mean ± SD (%)",
-                ventilation = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),  # <- changed from m^3/s to m^-3 s^-1
-                emission = expression(paste("Emission (g h"^{-1}, ")"))
+                ratio         = "Mean ± SD (%)",
+                ventilation   = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),
+                emission      = expression(paste("Emission (g h"^{-1}, ")")),
+                error         = "Relative errors Mean ± SD (%)"
         )
-        
         
         categories_present <- unique(summary_data$var_type)
         if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
@@ -254,6 +301,14 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
         } else {
                 ylab_to_use <- "Mean ± SD"
         }
+        
+        # X-axis label logic
+        xlab_to_use <- switch(
+                x,
+                "hour" = "Hour (aggregated by days)",
+                "day" = "Day (aggregated by hours)",
+                x
+        )
         
         analyzer_colors <- c(
                 "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
@@ -274,7 +329,7 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                 facet_grid(variable ~ location, scales = "free_y", switch = "y") +
                 scale_y_continuous(breaks = pretty_breaks(n = 8)) +
                 labs(
-                        x = x,
+                        x = xlab_to_use,
                         y = ylab_to_use
                 ) +
                 guides(
@@ -283,10 +338,10 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                 ) +
                 theme_classic() +
                 theme(
-                        text = element_text( size = 10),
-                        axis.text = element_text(size = 10),
-                        axis.title = element_text(size = 10),
-                        strip.text = element_text(size = 10),
+                        text = element_text(size = 12),
+                        axis.text = element_text(size = 12),
+                        axis.title = element_text(size = 12),
+                        strip.text = element_text(size = 12),
                         panel.border = element_rect(colour = "black", fill = NA),
                         axis.text.x = element_text(hjust = 1),
                         legend.position = "bottom",
@@ -294,7 +349,7 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                         legend.box = "horizontal",
                         legend.box.just = "left",
                         legend.title = element_blank(),
-                        legend.text = element_text(size = 10),
+                        legend.text = element_text(size = 12),
                         legend.key.width = unit(0.1, "lines")
                 )
         
@@ -303,7 +358,7 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
 }
 
 # Development of function HSD_boxplot
-emiboxplot <- function(data, response_vars, group_var = "analyzer") {
+emiboxplot <- function(data, response_vars, group_var = "analyzer", var_type_filter = NULL) {
         library(dplyr)
         library(ggpubr)
         library(rstatix)
@@ -314,8 +369,15 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
         facet_x <- "location"
         facet_y <- "variable"
         
+        df <- data
+        
+        # Apply var_type filter if specified
+        if (!is.null(var_type_filter)) {
+                df <- df %>% filter(var_type %in% var_type_filter)
+        }
+        
         # Filter data to only requested variables
-        data_sub <- data %>%
+        data_sub <- df %>%
                 filter(.data[[facet_y]] %in% response_vars)
         
         # Remove outliers per group_var and variable (omit outlier values)
@@ -365,17 +427,11 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
                        shape = guide_legend(nrow = 1)) +
                 theme_classic() +
                 theme(
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
-                        axis.text.y = element_text(size = 10),
-                        axis.title = element_text(size = 10),
-                        strip.text = element_text(size = 10),
-                        legend.position = "bottom",
-                        legend.title = element_blank(),
-                        legend.text = element_text(size = 10),
-                        legend.key.width = unit(0.1, "lines"),
-                        legend.box = "horizontal",
-                        legend.direction = "horizontal",
-                        legend.box.just = "left",
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+                        axis.text.y = element_text(size = 12),
+                        axis.title = element_text(size = 12),
+                        strip.text = element_text(size = 12),
+                        legend.position = "none",  # hide legend completely
                         panel.border = element_rect(colour = "black", fill = NA),
                         axis.ticks.length = unit(0.2, "cm")
                 ) +
@@ -387,7 +443,7 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
 }
 
 # Development of function emiheatmap
-emiheatmap <- function(data, response_vars, group_var = "analyzer") {
+emiheatmap <- function(data, response_vars, group_var = "analyzer", var_type_filter = NULL) {
         library(dplyr)
         library(ggplot2)
         library(viridis)
@@ -395,8 +451,15 @@ emiheatmap <- function(data, response_vars, group_var = "analyzer") {
         facet_x <- "location"
         facet_y <- "variable"
         
+        df <- data
+        
+        # Apply var_type filter if specified
+        if (!is.null(var_type_filter)) {
+                df <- df %>% filter(var_type %in% var_type_filter)
+        }
+        
         # Filter and prepare data
-        data_sub <- data %>%
+        data_sub <- df %>%
                 filter(.data[[facet_y]] %in% response_vars,
                        .data[[group_var]] != "FTIR.4")
         
@@ -423,18 +486,18 @@ emiheatmap <- function(data, response_vars, group_var = "analyzer") {
                         x = "Hour of Day",
                         y = group_var
                 ) +
-                theme_minimal(base_size = 10) +
+                theme_minimal(base_size = 12) +
                 theme(
                         panel.grid = element_blank(),
-                        axis.text.x = element_text(size = 10),
-                        axis.text.y = element_text(size = 10),
+                        axis.text.x = element_text(size = 12),
+                        axis.text.y = element_text(size = 12),
                         panel.border = element_rect(color = "black", fill = NA),
                         panel.spacing = unit(0.1, "lines"),
                         strip.background = element_rect(color = "black", fill = NA),
-                        strip.text = element_text(size = 10),
+                        strip.text = element_text(size = 12),
                         legend.position = "bottom",
-                        legend.title = element_text(size = 10),
-                        legend.text = element_text(size = 9)
+                        legend.title = element_text(size = 12),
+                        legend.text = element_text(size = 12)
                 )
         
         print(p)
@@ -460,8 +523,8 @@ LUFA_CRDS <- read.csv("20250408-15_long_LUFA_CRDS.3.csv")
 gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS)
 input_combined <-full_join(gas_data, animal_temp, by = "DATE.TIME") %>%
         mutate(day = as.Date(DATE.TIME)) %>% 
-        select(DATE.TIME, day, hour, everything())
-
+        select(DATE.TIME, day, hour, everything())%>%
+        mutate(across(where(is.numeric) & !any_of(c("hour")), ~ round(.x, 2)))
 
 # Write csv
 input_combined <- input_combined %>% select(DATE.TIME, hour, everything())
@@ -474,30 +537,40 @@ input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" &
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
 
-emission_combined <- emission_combined %>%
-        mutate(
-                # NH3 to CO2
-                NHCO_in = (NH3_in / CO2_in)*100,
-                NHCO_N  = (NH3_N  / CO2_N)*100,
-                NHCO_S  = (NH3_S  / CO2_S)*100,
-                
-                # NH3 to CH4
-                NHCH_in = (NH3_in / CH4_in)*100,
-                NHCH_N  = (NH3_N  / CH4_N)*100,
-                NHCH_S  = (NH3_S  / CH4_S)*100,
-                
-                # CH4 to CO2
-                CHCO_in = (CH4_in / CO2_in)*100,
-                CHCO_N  = (CH4_N  / CO2_N)*100,
-                CHCO_S  = (CH4_S  / CO2_S)*100
-        )
-
 # Write csv
 write_excel_csv(emission_combined, "20250408-15_ringversuche_emission_combined_data.csv")
 
+######## Computation of relative errors #########
+# List all variables
+vars <- c(
+        # Concentrations
+        "CO2_in", "CO2_N", "CO2_S",
+        "CH4_in", "CH4_N", "CH4_S",
+        "NH3_in", "NH3_N", "NH3_S",
+        
+        # Ratios
+        "NHCO_in", "NHCO_N", "NHCO_S",
+        "CHCO_in", "CHCO_N", "CHCO_S",
+        
+        # Deltas
+        "delta_NH3_N", "delta_CH4_N", "delta_CO2_N",
+        "delta_NH3_S", "delta_CH4_S", "delta_CO2_S",
+        
+        # Ventilation
+        "Q_Vent_rate_N", "Q_Vent_rate_S",
+        
+        # Emissions
+        "e_NH3_N", "e_CH4_N", "e_NH3_S", "e_CH4_S"
+)
+
+# Calculate errors using the emirror function
+emission_error  <- emirror(emission_combined, vars = vars)
+
+# Write csv
+write_excel_csv(emission_error, "20250408-15_ringversuche_emission_error_data.csv")
 
 ######## Reshape the data #########
-emission_reshaped <-  reparam(emission_combined) %>%
+emission_reshaped <-  reparam(emission_error) %>%
         mutate(
                 DATE.TIME = as.POSIXct(DATE.TIME),
                 day = as.factor(as.Date(DATE.TIME)),
@@ -505,31 +578,35 @@ emission_reshaped <-  reparam(emission_combined) %>%
 
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
-
 ########### Calculate mean, sd and cv #########
 c_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("c_CO2", "c_CH4", "c_NH3"),
+        response_vars = c("CO2", "CH4", "NH3","Err_CO2", "Err_CH4", "Err_NH3"),
+        var_type_filter = c("concentration","error"),
         group_vars = c("analyzer", "location"))
 
 d_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3", "Err_delta_CO2", "Err_delta_CH4", "Err_delta_NH3"),
+        var_type_filter = c("delta","error"),
         group_vars = c("analyzer", "location"))
 
 r_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("NH3/CO2", "CH4/CO2"),
+        response_vars = c("NH3/CO2", "CH4/CO2", "Err_NH3/CO2", "Err_CH4/CO2"),
+        var_type_filter = c("ratio","error"),
         group_vars = c("analyzer", "location"))
 
 q_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("Q_Vent_rate"),
+        response_vars = c("Q_Vent_rate", "Err_Q_Vent_rate"),
+        var_type_filter = c("ventilation","error"),
         group_vars = c("analyzer", "location"))
 
 e_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("e_CH4", "e_NH3"),
+        response_vars = c("e_CH4", "e_NH3", "Err_e_CH4", "Err_e_NH3"),
+        var_type_filter = c("emission","error"),
         group_vars = c("analyzer", "location"))
 
 # Apply function to each stat table and create *_hour_sum objects
@@ -547,19 +624,6 @@ readr::write_excel_csv(e_hour_sum, "e_hour_summary.csv")
 readr::write_excel_csv(q_hour_sum, "q_hour_summary.csv")
 
 ######## ANOVA and HSD Summary ########
-# list variables
-vars <- c(
-        "CO2_in", "CH4_in", "NH3_in",
-        "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S",
-        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
-        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S",
-        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
-        "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "NHCO_in", "NHCO_N", "NHCO_S",
-        "CHCO_in", "CHCO_N", "CHCO_S",
-        "NHCH_in", "NHCH_N", "NHCH_S")
-
 # Tukey HSD
 # Remove rows where any response variable has NA/NaN/Inf
 emission_clean <- emission_combined %>%
@@ -575,53 +639,30 @@ write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 
 ######## Hourly Mean ± SD Trend Plots ########
-c_erbr_plot <- emiconplot(data = emission_reshaped,
+c_r_erbr_plot <- emiconplot(data = emission_reshaped,
                           x = "hour",
-                          y = c("c_CO2", "c_CH4", "c_NH3"),
-                          var_type_filter = "concentration")
+                          y = c("Err_CO2", "Err_CH4", "Err_NH3", "Err_NH3/CO2", "Err_CH4/CO2"),
+                          var_type_filter = "error")
 
-r_erbr_plot <- emiconplot(data = emission_reshaped,
+q_e_erbr_plot <- emiconplot(data = emission_reshaped,
                           x = "hour",
-                          y = c("NH3/CO2", "CH4/CO2"),
-                          var_type_filter = "ratio")
+                          y = c("Err_Q_Vent_rate","Err_e_CH4", "Err_e_NH3"),
+                          var_type_filter = "error")
 
-q_erbr_plot <- emiconplot(data = emission_reshaped,
-                          x = "hour",
-                          y = c("Q_Vent_rate"),
-                          var_type_filter = "ventilation")
+#save plots
+ggsave(filename = "c_r_erbr_plot.pdf",
+       plot = c_r_erbr_plot,
+       width = 18, height = 12,
+       dpi = 100)
 
-e_erbr_plot <- emiconplot(data = emission_reshaped,
-                          x = "hour",
-                          y = c("e_CH4", "e_NH3"),
-                          var_type_filter = "emission")
-
-# Named list of plots
-dailyplots <- list(
-        c_erbr_plot = c_erbr_plot,
-        r_erbr_plot = r_erbr_plot,
-        q_erbr_plot = q_erbr_plot,
-        e_erbr_plot = e_erbr_plot)
-
-# coresponding size settings (width, height)
-plot_sizes <- list(
-        c_erbr_plot = c(15.5, 8.5),
-        r_erbr_plot = c(15.5, 8.5),
-        q_erbr_plot = c(13.5, 5.8),
-        e_erbr_plot = c(13.5, 8.5))
-
-# Save each plot using its specific size
-for (plot_name in names(dailyplots)) {
-        size <- plot_sizes[[plot_name]]
-        ggsave(
-                filename = paste0(plot_name, ".pdf"),
-                plot = dailyplots[[plot_name]],
-                width = size[1], height = size[2], dpi = 300)
-}
-
+ggsave(filename = "q_e_erbr_plot.pdf",
+       plot = q_e_erbr_plot,
+       width = 13, height = 7,
+       dpi = 100)
 
 ########## Heatmaps (CV) #############
-c_heatmap <- emiheatmap(data = c_stat_sum, 
-                        response_vars = c("c_CO2", "c_CH4", "c_NH3"))
+c_heatmap <- emiheatmap(data = c_stat_sum,
+                        response_vars = c("CO2", "CH4", "NH3"))
 
 r_heatmap <- emiheatmap(data = r_stat_sum, 
                         response_vars = c("NH3/CO2", "CH4/CO2"))
@@ -641,10 +682,10 @@ dailyplots <- list(
 
 # coresponding size settings (width, height)
 plot_sizes <- list(
-        c_heatmap = c(15.5, 8.5),
-        r_heatmap = c(13.5, 5.8),
-        q_heatmap = c(13.5, 5.8),
-        e_heatmap = c(13.5, 8.5))
+        c_heatmap = c(18, 8.5),
+        r_heatmap = c(18, 6.5),
+        q_heatmap = c(14, 4.4),
+        e_heatmap = c(14, 6.5))
 
 # Save each plot using its specific size
 for (plot_name in names(dailyplots)) {
