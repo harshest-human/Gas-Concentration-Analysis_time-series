@@ -17,6 +17,9 @@ library(rstatix)
 library(ggcorrplot)
 library(patchwork)
 library(networkD3)
+library(ggridges)
+library(rstatix)
+library(multcompView)
 
 ######## Development of functions #######
 # Development of indirect.CO2.balance function
@@ -139,7 +142,7 @@ stat_table <- function(data, response_vars, group_vars) {
         
         data %>%
                 filter(variable %in% response_vars) %>%
-                group_by(across(all_of(group_vars)), variable) %>%
+                group_by(across(all_of(c("hour", group_vars))), variable) %>%
                 summarise(
                         n = n(),
                         mean = round(mean(value, na.rm = TRUE), 2),
@@ -186,54 +189,39 @@ HSD_table <- function(data, response_vars, group_var) {
         return(combined)
 }
 
-# Development of function emission and concentration plot
-emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
+# Development of function HSD_boxplot
+HSD_boxplot <- function(data, response_vars, group_var = "analyzer") {
         library(dplyr)
+        library(ggpubr)
+        library(rstatix)
         library(ggplot2)
         library(scales)
         
-        # Check for required columns
-        required_cols <- c("location", "analyzer", "var_type", "variable", "value", x)
-        missing_cols <- setdiff(required_cols, names(data))
-        if (length(missing_cols) > 0) {
-                stop(paste("Missing columns in data:", paste(missing_cols, collapse = ", ")))
-        }
+        # Fixed facet variables
+        facet_x <- "location"
+        facet_y <- "variable"
         
-        # Filter by var_type if requested
-        if (!is.null(var_type_filter)) {
-                data <- data %>% filter(var_type %in% var_type_filter)
-        }
+        # Filter data to only requested variables
+        data_sub <- data %>%
+                filter(.data[[facet_y]] %in% response_vars)
         
-        # Filter by y (variable names) if requested
-        if (!is.null(y)) {
-                data <- data %>% filter(variable %in% y)
-        }
-        
-        # Summarize mean and SE by grouping over x
-        summary_data <- data %>%
-                group_by(across(all_of(c(x, "location", "analyzer", "var_type", "variable")))) %>%
-                summarise(
-                        mean_val = mean(value, na.rm = TRUE),
-                        se_val = sd(value, na.rm = TRUE) / sqrt(sum(!is.na(value))),
-                        .groups = "drop"
-                )
-        
-        # y-axis labels by var_type
+        # y-axis labels by var_type from emiconplot style
         ylab_map <- list(
                 concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
                 ratio = "Mean ± SE (%)",
-                ventilation = expression(paste("Ventilation rate (m"^3, "/s)")),
+                ventilation = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),
                 emission = expression(paste("Emission (g h"^{-1}, ")"))
         )
         
-        categories_present <- unique(summary_data$var_type)
+        # Try to infer var_type for ylab; if none, default
+        categories_present <- unique(data_sub$var_type)
         if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
                 ylab_to_use <- ylab_map[[categories_present]]
         } else {
-                ylab_to_use <- "Mean ± SE"
+                ylab_to_use <- "Value"
         }
         
-        # Colors and shapes for analyzers
+        # Colors and shapes for analyzers from emiconplot
         analyzer_colors <- c(
                 "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
                 "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
@@ -244,7 +232,94 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                 "FTIR.4" = 5, "CRDS.1" = 15, "CRDS.2" = 19, "CRDS.3" = 17
         )
         
-        # Generate plot
+        # Ensure group_var is a factor sorted alphabetically for ascending order on x axis
+        data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
+        
+        p <- ggplot(data_sub, aes_string(x = group_var, y = "value", fill = group_var)) +
+                geom_boxplot(alpha = 0.8, outlier.size = 1, fatten = 1.5, color = "black") + 
+                stat_summary(fun = mean, geom = "point", aes(shape = !!sym(group_var)), 
+                             size = 1.5, color = "white", fill = "white") +  
+                facet_grid(reformulate(facet_x, facet_y), scales = "free_y", switch = "y") +
+                scale_fill_manual(values = analyzer_colors) +
+                scale_shape_manual(values = analyzer_shapes) +
+                guides(fill = guide_legend(nrow = 1),
+                       shape = guide_legend(nrow = 1)) +
+                theme_classic() +
+                theme(
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+                        axis.text.y = element_text(size = 10),
+                        axis.title = element_text(size = 10),
+                        strip.text = element_text(size = 10),
+                        legend.position = "bottom",
+                        legend.title = element_blank(),
+                        legend.text = element_text(size = 10),
+                        legend.key.width = unit(0.5, "lines"),
+                        legend.box = "horizontal",
+                        legend.direction = "horizontal",
+                        legend.box.just = "left",
+                        panel.border = element_rect(colour = "black", fill = NA),
+                        axis.ticks.length = unit(0.2, "cm")
+                ) +
+                scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+                labs(y = ylab_to_use, x = group_var)
+        
+        print(p)
+        return(p)
+}
+
+# Development of function emission and concentration plot
+emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
+        library(dplyr)
+        library(ggplot2)
+        library(scales)
+        
+        required_cols <- c("location", "analyzer", "var_type", "variable", "value", x)
+        missing_cols <- setdiff(required_cols, names(data))
+        if (length(missing_cols) > 0) {
+                stop(paste("Missing columns in data:", paste(missing_cols, collapse = ", ")))
+        }
+        
+        if (!is.null(var_type_filter)) {
+                data <- data %>% filter(var_type %in% var_type_filter)
+        }
+        
+        if (!is.null(y)) {
+                data <- data %>% filter(variable %in% y)
+        }
+        
+        summary_data <- data %>%
+                group_by(across(all_of(c(x, "location", "analyzer", "var_type", "variable")))) %>%
+                summarise(
+                        mean_val = mean(value, na.rm = TRUE),
+                        se_val = sd(value, na.rm = TRUE) / sqrt(sum(!is.na(value))),
+                        .groups = "drop"
+                )
+        
+        ylab_map <- list(
+                concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
+                ratio = "Mean ± SE (%)",
+                ventilation = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),  # <- changed from m^3/s to m^-3 s^-1
+                emission = expression(paste("Emission (g h"^{-1}, ")"))
+        )
+        
+        
+        categories_present <- unique(summary_data$var_type)
+        if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
+                ylab_to_use <- ylab_map[[categories_present]]
+        } else {
+                ylab_to_use <- "Mean ± SE"
+        }
+        
+        analyzer_colors <- c(
+                "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
+                "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
+                "CRDS.3" = "#a6761d"
+        )
+        analyzer_shapes <- c(
+                "FTIR.1" = 0, "FTIR.2" = 1, "FTIR.3" = 2,
+                "FTIR.4" = 5, "CRDS.1" = 15, "CRDS.2" = 19, "CRDS.3" = 17
+        )
+        
         p <- ggplot(summary_data, aes_string(x = x, y = "mean_val", color = "analyzer", shape = "analyzer", group = "analyzer")) +
                 geom_line() +
                 geom_point(size = 2) +
@@ -252,16 +327,31 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                 scale_color_manual(values = analyzer_colors) +
                 scale_shape_manual(values = analyzer_shapes) +
                 facet_grid(variable ~ location, scales = "free_y", switch = "y") +
-                scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+                scale_y_continuous(breaks = pretty_breaks(n = 8)) +
                 labs(
                         x = x,
-                        y = ylab_to_use,
-                        color = "Analyzer",
-                        shape = "Analyzer"
+                        y = ylab_to_use
+                ) +
+                guides(
+                        color = guide_legend(nrow = 1),
+                        shape = guide_legend(nrow = 1)
                 ) +
                 theme_classic() +
-                theme(axis.text.x = element_text(angle = 45, hjust = 1),
-                      panel.border = element_rect(colour = "black", fill = NA))
+                theme(
+                        text = element_text( size = 10),
+                        axis.text = element_text(size = 10),
+                        axis.title = element_text(size = 10),
+                        strip.text = element_text(size = 10),
+                        panel.border = element_rect(colour = "black", fill = NA),
+                        axis.text.x = element_text(hjust = 1),
+                        legend.position = "bottom",
+                        legend.direction = "horizontal",
+                        legend.box = "horizontal",
+                        legend.box.just = "left",
+                        legend.title = element_blank(),
+                        legend.text = element_text(size = 10),
+                        legend.key.width = unit(0.1, "lines")
+                )
         
         print(p)
         return(p)
@@ -418,12 +508,61 @@ emission_reshaped <-  reparam(emission_combined) %>%
         mutate(
                 DATE.TIME = as.POSIXct(DATE.TIME),
                 day = as.factor(as.Date(DATE.TIME)),
-                hour = as.factor(format(DATE.TIME, "%H:00"))) 
+                hour = as.factor(hour)) 
 
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
 
-######## Trend Visualization ########
+########### Calculate mean, sd and cv #########
+c_stat_sum <- stat_table(
+        data = emission_reshaped,
+        response_vars = c("c_CO2", "c_CH4", "c_NH3"),
+        group_vars = c("analyzer", "location"))
+
+q_stat_sum <- stat_table(
+        data = emission_reshaped,
+        response_vars = c("Q_Vent_rate"),
+        group_vars = c("analyzer", "location"))
+
+e_stat_sum <- stat_table(
+        data = emission_reshaped,
+        response_vars = c("e_CH4", "e_NH3"),
+        group_vars = c("analyzer", "location"))
+
+# Write stat summary as csv
+readr::write_excel_csv(c_stat_sum, "c_stat_summary.csv")
+readr::write_excel_csv(e_stat_sum, "e_stat_summary.csv")
+readr::write_excel_csv(q_stat_sum, "q_stat_summary.csv")
+
+######## ANOVA and HSD Summary ########
+# list variables
+vars <- c(
+        "CO2_in", "CH4_in", "NH3_in",
+        "CO2_N", "CH4_N", "NH3_N",
+        "CO2_S", "CH4_S", "NH3_S",
+        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
+        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S",
+        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
+        "Q_Vent_rate_N", "Q_Vent_rate_S",
+        "NHCO_in", "NHCO_N", "NHCO_S",
+        "CHCO_in", "CHCO_N", "CHCO_S",
+        "NHCH_in", "NHCH_N", "NHCH_S")
+
+# Tukey HSD
+# Remove rows where any response variable has NA/NaN/Inf
+emission_clean <- emission_combined %>%
+        filter(if_all(all_of(vars), ~ !is.na(.) & is.finite(.)))
+
+# Then perform Tukey HSD
+result_HSD_summary <- HSD_table(data = emission_clean,
+                                response_vars = vars,
+                                group_var = "analyzer")
+
+# Save the result
+write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
+
+
+######## Hourly Mean ± SE Trend Plots ########
 c_erbr_plot <- emiconplot(data = emission_reshaped,
                           x = "hour",
                           y = c("c_CO2", "c_CH4", "c_NH3"),
@@ -431,7 +570,7 @@ c_erbr_plot <- emiconplot(data = emission_reshaped,
 
 r_erbr_plot <- emiconplot(data = emission_reshaped,
                           x = "hour",
-                          y = c("NH3/CO2", "NH3/CH4", "CH4/CO2"),
+                          y = c("NH3/CO2", "CH4/CO2"),
                           var_type_filter = "ratio")
 
 q_erbr_plot <- emiconplot(data = emission_reshaped,
@@ -453,10 +592,10 @@ dailyplots <- list(
 
 # coresponding size settings (width, height)
 plot_sizes <- list(
-        c_erbr_plot = c(15.5, 8.75),
-        r_erbr_plot = c(15.5, 8.75),
-        q_erbr_plot = c(13.5, 5.12),
-        e_erbr_plot = c(12.69, 8.44))
+        c_erbr_plot = c(15, 8.5),
+        r_erbr_plot = c(15, 8.5),
+        q_erbr_plot = c(13, 5.8),
+        e_erbr_plot = c(13, 8.5))
 
 # Save each plot using its specific size
 for (plot_name in names(dailyplots)) {
@@ -465,87 +604,46 @@ for (plot_name in names(dailyplots)) {
                 filename = paste0(plot_name, ".pdf"),
                 plot = dailyplots[[plot_name]],
                 width = size[1], height = size[2], dpi = 300)
-        }
+}
 
 
-######## Statistical Analysis ########
-# list variables
-cvars <- c(
-        "CO2_in", "CH4_in", "NH3_in",
-        "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S"
-)
+########## Heatmaps (CV) #############
+c_heatmap <- ggplot(filter(c_stat_sum, variable %in% c("c_CO2", "c_CH4", "c_NH3"), analyzer != "FTIR.4"),
+                    aes(x = factor(hour), y = analyzer, fill = cv)) +
+        geom_tile(color = "white") +
+        facet_grid(variable ~ location, scales = "free_y", switch = "y") +
+        scale_fill_viridis_c(option = "plasma", name = "CV (%)") +
+        labs(x = "Hour of Day",
+             y = "Analyzer") +
+        theme_minimal() +
+        theme(axis.text.x = element_text(hjust = 1),
+              panel.border = element_rect(color = "black", fill = NA),
+              panel.spacing = unit(0.1, "lines"),
+              strip.background = element_rect(color = "black", fill = NA))
 
-dvars <- c(
-        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
-        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S"
-)
-
-evars <- c(
-        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S"
-)
-
-qvars <- c(
-        "Q_Vent_rate_N", "Q_Vent_rate_S"
-)
-
-rvars <- c(
-        "NHCO_in", "NHCO_N", "NHCO_S",
-        "CHCO_in", "CHCO_N", "CHCO_S",
-        "NHCH_in", "NHCH_N", "NHCH_S"
-)
+# Save plots
+ggsave("heatmap_cv.pdf", plot = c_heatmap, device = "pdf",
+       width = 15.5, height = 8.75, , dpi = 300)
 
 
-vars <- c(
-        "CO2_in", "CH4_in", "NH3_in",
-        "CO2_N", "CH4_N", "NH3_N",
-        "CO2_S", "CH4_S", "NH3_S",
-        "delta_CO2_N", "delta_CH4_N", "delta_NH3_N",
-        "delta_CO2_S", "delta_CH4_S", "delta_NH3_S",
-        "e_CH4_N", "e_NH3_N", "e_CH4_S", "e_NH3_S",
-        "Q_Vent_rate_N", "Q_Vent_rate_S",
-        "NHCO_in", "NHCO_N", "NHCO_S",
-        "CHCO_in", "CHCO_N", "CHCO_S",
-        "NHCH_in", "NHCH_N", "NHCH_S"
-)
+########## Boxplots (HSD) ventilation and emission rates ##############
+e_boxplot <- HSD_boxplot(data = emission_reshaped,
+                         response_vars = c("e_CH4", "e_NH3"),
+                         group_var = "analyzer")
 
-# Tukey HSD
-# Remove rows where any response variable has NA/NaN/Inf
-emission_clean <- emission_combined %>%
-        filter(if_all(all_of(vars), ~ !is.na(.) & is.finite(.)))
+q_boxplot <- HSD_boxplot(data = emission_reshaped,
+                         response_vars = c("Q_Vent_rate"),
+                         group_var = "analyzer")
 
-# Then perform Tukey HSD
-result_HSD_summary <- HSD_table(
-        data = emission_clean,
-        response_vars = vars,
-        group_var = "analyzer"
-)
+# Save e_boxplot
+ggsave(filename = "e_boxplot.pdf",
+       plot = e_boxplot,
+       width = 13, height = 8.5, dpi = 300)
 
-# Save the result
-write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
-
-# Calculate mean, sd and cv
-c_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("c_CO2", "c_CH4", "c_NH3"),
-        group_vars = c("analyzer", "location"))
-
-q_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("Q_Vent_rate"),
-        group_vars = c("analyzer", "location"))
-
-e_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("e_CH4", "e_NH3"),
-        group_vars = c("analyzer", "location"))
-
-# Write stat summary as csv
-readr::write_excel_csv(c_stat_sum, "c_stat_summary.csv")
-readr::write_excel_csv(d_stat_sum, "d_stat_summary.csv")
-readr::write_excel_csv(e_stat_sum, "e_stat_summary.csv")
-readr::write_excel_csv(q_stat_sum, "q_stat_summary.csv")
-
+# Save q_boxplot
+ggsave(filename = "q_boxplot.pdf",
+       plot = q_boxplot,
+       width = 13, height = 5.8, dpi = 300)
 
 ########## Correlograms ##############
 # Plotting by function
@@ -558,80 +656,3 @@ ggsave("e_NH3_corrgram.pdf", plot = e_NH3_corrgram, width = 10, height = 5, dpi 
 ggsave("e_CH4_corrgram.pdf", plot = e_CH4_corrgram, width = 10, height = 5, dpi = 300)
 ggsave("q_vent_corrgram.pdf", plot = q_vent_corrgram, width = 10, height = 5, dpi = 300)
 
-
-################# Sankey diagram ##############
-# Create nodes dataframe for all unique nodes (conc, ventilation, emission)
-conc_nodes <- c_stat_sum %>%
-        mutate(node = paste0("Conc ", gas, " (", location, ")")) %>%
-        distinct(node)
-
-vent_nodes <- q_stat_sum %>%
-        mutate(node = paste0("Ventilation rate (", location, ")")) %>%
-        distinct(node)
-
-emiss_nodes <- e_stat_sum %>%
-        mutate(node = paste0("Emission ", gas, " (", location, ")")) %>%
-        distinct(node)
-
-# Combine all nodes and assign zero-based IDs
-nodes <- bind_rows(conc_nodes, vent_nodes, emiss_nodes) %>%
-        distinct() %>%
-        mutate(id = row_number() - 1)
-
-# Helper function to get node ID
-node_id <- function(x) nodes$id[match(x, nodes$node)]
-
-# Create links from concentration CV to ventilation rate CV by location and gas
-
-# Because ventilation rate is not gas-specific, average concentration CVs per location (across gases)
-conc_cv_by_location <- c_stat_sum %>%
-        group_by(location) %>%
-        summarise(mean_cv_conc = mean(cv_concentration, na.rm = TRUE))
-
-vent_cv_by_location <- q_stat_sum %>%
-        select(location, cv_Q) %>%
-        distinct()
-
-# Link conc -> ventilation
-conc_to_vent <- conc_cv_by_location %>%
-        left_join(vent_cv_by_location, by = "location") %>%
-        rowwise() %>%
-        mutate(
-                source = node_id(paste0("Conc CO2 (", location, ")")),  # pick a representative gas node for source
-                target = node_id(paste0("Ventilation rate (", location, ")")),
-                value = mean_cv_conc
-        ) %>%
-        filter(!is.na(source), !is.na(target)) %>%
-        select(source, target, value)
-
-# Create links from ventilation rate CV to emission CV by location and gas
-# For emission, keep separate gas nodes
-
-vent_to_emiss <- e_stat_sum %>%
-        rowwise() %>%
-        mutate(
-                source = node_id(paste0("Ventilation rate (", location, ")")),
-                target = node_id(paste0("Emission ", gas, " (", location, ")")),
-                value = cv_emission
-        ) %>%
-        filter(!is.na(source), !is.na(target)) %>%
-        select(source, target, value)
-
-# Combine all links
-links <- bind_rows(conc_to_vent, vent_to_emiss)
-
-# Remove links with NA or zero values
-links <- links %>% filter(!is.na(value) & value > 0)
-
-# Create Sankey Diagram
-networkD3::sankeyNetwork(
-        Links = links,
-        Nodes = nodes,
-        Source = "source",
-        Target = "target",
-        Value = "value",
-        NodeID = "node",
-        fontSize = 12,
-        nodeWidth = 30,
-        sinksRight = FALSE
-)
