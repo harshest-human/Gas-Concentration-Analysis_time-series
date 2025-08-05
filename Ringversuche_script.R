@@ -153,6 +153,28 @@ stat_table <- function(data, response_vars, group_vars) {
                 )
 }
 
+# Function to summarize, pivot wider, and round
+hour_sum <- function(df) {
+        
+        library(dplyr)
+        library(tidyr)
+        
+        df %>%
+                group_by(analyzer, location, variable) %>%
+                summarise(
+                        mean = mean(mean, na.rm = TRUE),
+                        sd = mean(sd, na.rm = TRUE),
+                        cv = mean(cv, na.rm = TRUE),
+                        .groups = "drop"
+                ) %>%
+                pivot_wider(
+                        names_from = variable,
+                        values_from = c(mean, sd, cv),
+                        names_glue = "{.value}_{variable}"
+                ) %>%
+                mutate(across(where(is.numeric), ~ round(.x, 2)))
+}
+
 # Development of function HSD_table
 HSD_table <- function(data, response_vars, group_var) {
         
