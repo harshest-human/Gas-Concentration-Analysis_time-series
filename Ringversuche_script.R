@@ -41,7 +41,7 @@ indirect.CO2.balance <- function(df) {
                         n_LU = (n_animals * m_weight) / 500,
                         P_CO2_T_A_all_animal = hpu_T_A_cor_all_animal * P_CO2_term,
                         
-                        # Concentration differences (ppm)
+                        # Concentration differences (mg m3)
                         delta_NH3_N = NH3_in - NH3_N,
                         delta_CH4_N = CH4_in - CH4_N,
                         delta_CO2_N = CO2_in - CO2_N,
@@ -660,7 +660,7 @@ ggsave(filename = "q_e_erbr_plot.pdf",
        width = 13, height = 7,
        dpi = 100)
 
-########## Heatmaps (CV) #############
+########## Heat maps (CV) #############
 c_heatmap <- emiheatmap(data = c_stat_sum,
                         response_vars = c("CO2", "CH4", "NH3"))
 
@@ -697,7 +697,7 @@ for (plot_name in names(dailyplots)) {
 }
 
 
-########## Boxplots (HSD) ventilation and emission rates ##############
+########## Box plots (HSD) ventilation and emission rates ##############
 e_boxplot <- emiboxplot(data = emission_reshaped,
                          response_vars = c("e_CH4", "e_NH3"),
                          group_var = "analyzer")
@@ -715,3 +715,5 @@ ggsave(filename = "e_boxplot.pdf",
 ggsave(filename = "q_boxplot.pdf",
        plot = q_boxplot,
        width = 13.5, height = 5.8, dpi = 300)
+
+
