@@ -189,84 +189,6 @@ HSD_table <- function(data, response_vars, group_var) {
         return(combined)
 }
 
-# Development of function HSD_boxplot
-HSD_boxplot <- function(data, response_vars, group_var = "analyzer") {
-        library(dplyr)
-        library(ggpubr)
-        library(rstatix)
-        library(ggplot2)
-        library(scales)
-        
-        # Fixed facet variables
-        facet_x <- "location"
-        facet_y <- "variable"
-        
-        # Filter data to only requested variables
-        data_sub <- data %>%
-                filter(.data[[facet_y]] %in% response_vars)
-        
-        # y-axis labels by var_type from emiconplot style
-        ylab_map <- list(
-                concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
-                ratio = "Mean ± SE (%)",
-                ventilation = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),
-                emission = expression(paste("Emission (g h"^{-1}, ")"))
-        )
-        
-        # Try to infer var_type for ylab; if none, default
-        categories_present <- unique(data_sub$var_type)
-        if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
-                ylab_to_use <- ylab_map[[categories_present]]
-        } else {
-                ylab_to_use <- "Value"
-        }
-        
-        # Colors and shapes for analyzers from emiconplot
-        analyzer_colors <- c(
-                "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
-                "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
-                "CRDS.3" = "#a6761d"
-        )
-        analyzer_shapes <- c(
-                "FTIR.1" = 0, "FTIR.2" = 1, "FTIR.3" = 2,
-                "FTIR.4" = 5, "CRDS.1" = 15, "CRDS.2" = 19, "CRDS.3" = 17
-        )
-        
-        # Ensure group_var is a factor sorted alphabetically for ascending order on x axis
-        data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
-        
-        p <- ggplot(data_sub, aes_string(x = group_var, y = "value", fill = group_var)) +
-                geom_boxplot(alpha = 0.8, outlier.size = 1, fatten = 1.5, color = "black") + 
-                stat_summary(fun = mean, geom = "point", aes(shape = !!sym(group_var)), 
-                             size = 1.5, color = "white", fill = "white") +  
-                facet_grid(reformulate(facet_x, facet_y), scales = "free_y", switch = "y") +
-                scale_fill_manual(values = analyzer_colors) +
-                scale_shape_manual(values = analyzer_shapes) +
-                guides(fill = guide_legend(nrow = 1),
-                       shape = guide_legend(nrow = 1)) +
-                theme_classic() +
-                theme(
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
-                        axis.text.y = element_text(size = 10),
-                        axis.title = element_text(size = 10),
-                        strip.text = element_text(size = 10),
-                        legend.position = "bottom",
-                        legend.title = element_blank(),
-                        legend.text = element_text(size = 10),
-                        legend.key.width = unit(0.5, "lines"),
-                        legend.box = "horizontal",
-                        legend.direction = "horizontal",
-                        legend.box.just = "left",
-                        panel.border = element_rect(colour = "black", fill = NA),
-                        axis.ticks.length = unit(0.2, "cm")
-                ) +
-                scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
-                labs(y = ylab_to_use, x = group_var)
-        
-        print(p)
-        return(p)
-}
-
 # Development of function emission and concentration plot
 emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
         library(dplyr)
@@ -352,6 +274,84 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                         legend.text = element_text(size = 10),
                         legend.key.width = unit(0.1, "lines")
                 )
+        
+        print(p)
+        return(p)
+}
+
+# Development of function HSD_boxplot
+emiboxplot <- function(data, response_vars, group_var = "analyzer") {
+        library(dplyr)
+        library(ggpubr)
+        library(rstatix)
+        library(ggplot2)
+        library(scales)
+        
+        # Fixed facet variables
+        facet_x <- "location"
+        facet_y <- "variable"
+        
+        # Filter data to only requested variables
+        data_sub <- data %>%
+                filter(.data[[facet_y]] %in% response_vars)
+        
+        # y-axis labels by var_type from emiconplot style
+        ylab_map <- list(
+                concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
+                ratio = "Mean ± SE (%)",
+                ventilation = expression(paste("Ventilation rate (m"^{-3} * " h"^{-1}, ")")),
+                emission = expression(paste("Emission (g h"^{-1}, ")"))
+        )
+        
+        # Try to infer var_type for ylab; if none, default
+        categories_present <- unique(data_sub$var_type)
+        if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
+                ylab_to_use <- ylab_map[[categories_present]]
+        } else {
+                ylab_to_use <- "Value"
+        }
+        
+        # Colors and shapes for analyzers from emiconplot
+        analyzer_colors <- c(
+                "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
+                "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
+                "CRDS.3" = "#a6761d"
+        )
+        analyzer_shapes <- c(
+                "FTIR.1" = 0, "FTIR.2" = 1, "FTIR.3" = 2,
+                "FTIR.4" = 5, "CRDS.1" = 15, "CRDS.2" = 19, "CRDS.3" = 17
+        )
+        
+        # Ensure group_var is a factor sorted alphabetically for ascending order on x axis
+        data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
+        
+        p <- ggplot(data_sub, aes_string(x = group_var, y = "value", fill = group_var)) +
+                geom_boxplot(alpha = 0.8, outlier.size = 1, fatten = 1.5, color = "black") + 
+                stat_summary(fun = mean, geom = "point", aes(shape = !!sym(group_var)), 
+                             size = 1.5, color = "white", fill = "white") +  
+                facet_grid(reformulate(facet_x, facet_y), scales = "free_y", switch = "y") +
+                scale_fill_manual(values = analyzer_colors) +
+                scale_shape_manual(values = analyzer_shapes) +
+                guides(fill = guide_legend(nrow = 1),
+                       shape = guide_legend(nrow = 1)) +
+                theme_classic() +
+                theme(
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+                        axis.text.y = element_text(size = 10),
+                        axis.title = element_text(size = 10),
+                        strip.text = element_text(size = 10),
+                        legend.position = "bottom",
+                        legend.title = element_blank(),
+                        legend.text = element_text(size = 10),
+                        legend.key.width = unit(0.5, "lines"),
+                        legend.box = "horizontal",
+                        legend.direction = "horizontal",
+                        legend.box.just = "left",
+                        panel.border = element_rect(colour = "black", fill = NA),
+                        axis.ticks.length = unit(0.2, "cm")
+                ) +
+                scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+                labs(y = ylab_to_use, x = group_var)
         
         print(p)
         return(p)
@@ -627,11 +627,11 @@ ggsave("heatmap_cv.pdf", plot = c_heatmap, device = "pdf",
 
 
 ########## Boxplots (HSD) ventilation and emission rates ##############
-e_boxplot <- HSD_boxplot(data = emission_reshaped,
+e_boxplot <- emiboxplot(data = emission_reshaped,
                          response_vars = c("e_CH4", "e_NH3"),
                          group_var = "analyzer")
 
-q_boxplot <- HSD_boxplot(data = emission_reshaped,
+q_boxplot <- emiboxplot(data = emission_reshaped,
                          response_vars = c("Q_Vent_rate"),
                          group_var = "analyzer")
 
