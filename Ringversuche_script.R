@@ -395,32 +395,51 @@ emiheatmap <- function(data, response_vars, group_var = "analyzer") {
         facet_x <- "location"
         facet_y <- "variable"
         
+        # Filter and prepare data
         data_sub <- data %>%
                 filter(.data[[facet_y]] %in% response_vars,
                        .data[[group_var]] != "FTIR.4")
         
         data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
         
+        # Compute min, max, and 5 equally spaced breaks for CV
+        cv_min <- floor(min(data_sub$cv, na.rm = TRUE))
+        cv_max <- ceiling(max(data_sub$cv, na.rm = TRUE))
+        cv_breaks <- pretty(c(cv_min, cv_max), n = 4)  # auto-generates 5 nice breaks
+        
+        # Plot
         p <- ggplot(data_sub, aes(x = factor(hour), y = !!sym(group_var), fill = cv)) +
-                geom_tile(color = "white") +
+                geom_tile(color = "black") +
                 facet_grid(reformulate(facet_x, facet_y), scales = "free_y", switch = "y") +
                 scale_fill_viridis_c(
-                        option = "plasma", 
+                        option = "plasma",
                         name = "CV (%)",
-                        limits = c(0, 100),       # fixed scale from 0 to 100
-                        breaks = seq(0, 100, 10), # breaks every 10%
-                        oob = scales::squish      # squish out of range values into range
+                        limits = c(min(cv_breaks), max(cv_breaks)),
+                        breaks = cv_breaks,
+                        oob = scales::squish,
+                        guide = guide_colorbar(
+                                barwidth = 8,
+                                barheight = 0.5,
+                                title.position = "top",
+                                title.hjust = 0.5
+                        )
                 ) +
-                labs(x = "Hour of Day",
-                     y = group_var) +
-                theme_minimal() +
+                labs(
+                        x = "Hour of Day",
+                        y = group_var
+                ) +
+                theme_minimal(base_size = 10) +
                 theme(
-                        axis.text.x = element_text(hjust = 1, size = 10),
+                        panel.grid = element_blank(),
+                        axis.text.x = element_text(size = 10),
                         axis.text.y = element_text(size = 10),
                         panel.border = element_rect(color = "black", fill = NA),
                         panel.spacing = unit(0.1, "lines"),
                         strip.background = element_rect(color = "black", fill = NA),
-                        strip.text = element_text(size = 10)
+                        strip.text = element_text(size = 10),
+                        legend.position = "bottom",
+                        legend.title = element_text(size = 10),
+                        legend.text = element_text(size = 9)
                 )
         
         print(p)
@@ -503,6 +522,11 @@ d_stat_sum <- stat_table(
         response_vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
         group_vars = c("analyzer", "location"))
 
+r_stat_sum <- stat_table(
+        data = emission_reshaped,
+        response_vars = c("NH3/CO2", "CH4/CO2"),
+        group_vars = c("analyzer", "location"))
+
 q_stat_sum <- stat_table(
         data = emission_reshaped,
         response_vars = c("Q_Vent_rate"),
@@ -516,12 +540,14 @@ e_stat_sum <- stat_table(
 # Apply function to each stat table and create *_hour_sum objects
 c_hour_sum <- hour_sum(c_stat_sum)
 d_hour_sum <- hour_sum(d_stat_sum)
+r_hour_sum <- hour_sum(r_stat_sum)
 q_hour_sum <- hour_sum(q_stat_sum)
 e_hour_sum <- hour_sum(e_stat_sum)
 
 # write csv
 readr::write_excel_csv(c_hour_sum, "c_hour_summary.csv")
 readr::write_excel_csv(d_hour_sum, "d_hour_summary.csv")
+readr::write_excel_csv(r_hour_sum, "r_hour_summary.csv")
 readr::write_excel_csv(e_hour_sum, "e_hour_summary.csv")
 readr::write_excel_csv(q_hour_sum, "q_hour_summary.csv")
 
@@ -583,10 +609,10 @@ dailyplots <- list(
 
 # coresponding size settings (width, height)
 plot_sizes <- list(
-        c_erbr_plot = c(15, 8.5),
-        r_erbr_plot = c(15, 8.5),
-        q_erbr_plot = c(13, 5.8),
-        e_erbr_plot = c(13, 8.5))
+        c_erbr_plot = c(15.5, 8.5),
+        r_erbr_plot = c(15.5, 8.5),
+        q_erbr_plot = c(13.5, 5.8),
+        e_erbr_plot = c(13.5, 8.5))
 
 # Save each plot using its specific size
 for (plot_name in names(dailyplots)) {
@@ -602,16 +628,37 @@ for (plot_name in names(dailyplots)) {
 c_heatmap <- emiheatmap(data = c_stat_sum, 
                         response_vars = c("c_CO2", "c_CH4", "c_NH3"))
 
-d_heatmap <- emiheatmap(data = d_stat_sum, 
-                        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3"))
+r_heatmap <- emiheatmap(data = r_stat_sum, 
+                        response_vars = c("NH3/CO2", "CH4/CO2"))
 
-# Save plots
-ggsave("c_heatmap_cv.pdf", plot = c_heatmap, device = "pdf",
-       width = 13, height = 8.5, dpi = 300)
+q_heatmap <- emiheatmap(data = q_stat_sum, 
+                        response_vars = c("Q_Vent_rate"))
 
-# Save plots
-ggsave("d_heatmap_cv.pdf", plot = d_heatmap, device = "pdf",
-       width = 13, height = 8.5, dpi = 300)
+e_heatmap <- emiheatmap(data = e_stat_sum, 
+                        response_vars = c("e_CH4", "e_NH3"))
+
+# Named list of plots
+dailyplots <- list(
+        c_heatmap = c_heatmap,
+        r_heatmap = r_heatmap,
+        q_heatmap = q_heatmap,
+        e_heatmap = e_heatmap)
+
+# coresponding size settings (width, height)
+plot_sizes <- list(
+        c_heatmap = c(15.5, 8.5),
+        r_heatmap = c(13.5, 5.8),
+        q_heatmap = c(13.5, 5.8),
+        e_heatmap = c(13.5, 8.5))
+
+# Save each plot using its specific size
+for (plot_name in names(dailyplots)) {
+        size <- plot_sizes[[plot_name]]
+        ggsave(
+                filename = paste0(plot_name, ".pdf"),
+                plot = dailyplots[[plot_name]],
+                width = size[1], height = size[2], dpi = 300)
+}
 
 
 ########## Boxplots (HSD) ventilation and emission rates ##############
@@ -632,3 +679,4 @@ ggsave(filename = "e_boxplot.pdf",
 ggsave(filename = "q_boxplot.pdf",
        plot = q_boxplot,
        width = 13, height = 5.8, dpi = 300)
+
