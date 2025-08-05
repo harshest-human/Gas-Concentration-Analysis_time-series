@@ -513,11 +513,17 @@ e_stat_sum <- stat_table(
         response_vars = c("e_CH4", "e_NH3"),
         group_vars = c("analyzer", "location"))
 
-# Write stat summary as csv
-readr::write_excel_csv(c_stat_sum, "c_stat_summary.csv")
-readr::write_excel_csv(d_stat_sum, "d_stat_summary.csv")
-readr::write_excel_csv(e_stat_sum, "e_stat_summary.csv")
-readr::write_excel_csv(q_stat_sum, "q_stat_summary.csv")
+# Apply function to each stat table and create *_hour_sum objects
+c_hour_sum <- hour_sum(c_stat_sum)
+d_hour_sum <- hour_sum(d_stat_sum)
+q_hour_sum <- hour_sum(q_stat_sum)
+e_hour_sum <- hour_sum(e_stat_sum)
+
+# write csv
+readr::write_excel_csv(c_hour_sum, "c_hour_summary.csv")
+readr::write_excel_csv(d_hour_sum, "d_hour_summary.csv")
+readr::write_excel_csv(e_hour_sum, "e_hour_summary.csv")
+readr::write_excel_csv(q_hour_sum, "q_hour_summary.csv")
 
 ######## ANOVA and HSD Summary ########
 # list variables
