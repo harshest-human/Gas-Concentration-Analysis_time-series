@@ -295,6 +295,12 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
         data_sub <- data %>%
                 filter(.data[[facet_y]] %in% response_vars)
         
+        # Remove outliers per group_var and variable (omit outlier values)
+        data_no_outliers <- data_sub %>%
+                group_by(!!sym(group_var), .data[[facet_y]]) %>%
+                filter(!is_outlier(value)) %>%
+                ungroup()
+        
         # y-axis labels by var_type from emiconplot style
         ylab_map <- list(
                 concentration = expression(paste("Mean ± SE (mg ", m^{-3}, ")")),
@@ -304,7 +310,7 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
         )
         
         # Try to infer var_type for ylab; if none, default
-        categories_present <- unique(data_sub$var_type)
+        categories_present <- unique(data_no_outliers$var_type)
         if (length(categories_present) == 1 && categories_present %in% names(ylab_map)) {
                 ylab_to_use <- ylab_map[[categories_present]]
         } else {
@@ -323,10 +329,10 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
         )
         
         # Ensure group_var is a factor sorted alphabetically for ascending order on x axis
-        data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
+        data_no_outliers[[group_var]] <- factor(data_no_outliers[[group_var]], levels = sort(unique(data_no_outliers[[group_var]])))
         
-        p <- ggplot(data_sub, aes_string(x = group_var, y = "value", fill = group_var)) +
-                geom_boxplot(alpha = 0.8, outlier.size = 1, fatten = 1.5, color = "black") + 
+        p <- ggplot(data_no_outliers, aes_string(x = group_var, y = "value", fill = group_var)) +
+                geom_boxplot(alpha = 0.8, fatten = 1.5, color = "black") + 
                 stat_summary(fun = mean, geom = "point", aes(shape = !!sym(group_var)), 
                              size = 1.5, color = "white", fill = "white") +  
                 facet_grid(reformulate(facet_x, facet_y), scales = "free_y", switch = "y") +
