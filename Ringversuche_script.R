@@ -20,6 +20,7 @@ library(networkD3)
 library(ggridges)
 library(rstatix)
 library(multcompView)
+library(viridis)
 
 ######## Development of functions #######
 # Development of indirect.CO2.balance function
@@ -349,7 +350,7 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
                         legend.position = "bottom",
                         legend.title = element_blank(),
                         legend.text = element_text(size = 10),
-                        legend.key.width = unit(0.5, "lines"),
+                        legend.key.width = unit(0.1, "lines"),
                         legend.box = "horizontal",
                         legend.direction = "horizontal",
                         legend.box.just = "left",
@@ -358,6 +359,47 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer") {
                 ) +
                 scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
                 labs(y = ylab_to_use, x = group_var)
+        
+        print(p)
+        return(p)
+}
+
+# Development of function emiheatmap
+emiheatmap <- function(data, response_vars, group_var = "analyzer") {
+        library(dplyr)
+        library(ggplot2)
+        library(viridis)
+        
+        facet_x <- "location"
+        facet_y <- "variable"
+        
+        data_sub <- data %>%
+                filter(.data[[facet_y]] %in% response_vars,
+                       .data[[group_var]] != "FTIR.4")
+        
+        data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
+        
+        p <- ggplot(data_sub, aes(x = factor(hour), y = !!sym(group_var), fill = cv)) +
+                geom_tile(color = "white") +
+                facet_grid(reformulate(facet_x, facet_y), scales = "free_y", switch = "y") +
+                scale_fill_viridis_c(
+                        option = "plasma", 
+                        name = "CV (%)",
+                        limits = c(0, 100),       # fixed scale from 0 to 100
+                        breaks = seq(0, 100, 10), # breaks every 10%
+                        oob = scales::squish      # squish out of range values into range
+                ) +
+                labs(x = "Hour of Day",
+                     y = group_var) +
+                theme_minimal() +
+                theme(
+                        axis.text.x = element_text(hjust = 1, size = 10),
+                        axis.text.y = element_text(size = 10),
+                        panel.border = element_rect(color = "black", fill = NA),
+                        panel.spacing = unit(0.1, "lines"),
+                        strip.background = element_rect(color = "black", fill = NA),
+                        strip.text = element_text(size = 10)
+                )
         
         print(p)
         return(p)
@@ -453,7 +495,6 @@ emicorrgram <- function(data, target_variable) {
         
         print(p)
 }
-
 ######## Import Gas Data #########
 # Load animal and temperature data
 animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
@@ -614,18 +655,8 @@ for (plot_name in names(dailyplots)) {
 
 
 ########## Heatmaps (CV) #############
-c_heatmap <- ggplot(filter(c_stat_sum, variable %in% c("c_CO2", "c_CH4", "c_NH3"), analyzer != "FTIR.4"),
-                    aes(x = factor(hour), y = analyzer, fill = cv)) +
-        geom_tile(color = "white") +
-        facet_grid(variable ~ location, scales = "free_y", switch = "y") +
-        scale_fill_viridis_c(option = "plasma", name = "CV (%)") +
-        labs(x = "Hour of Day",
-             y = "Analyzer") +
-        theme_minimal() +
-        theme(axis.text.x = element_text(hjust = 1),
-              panel.border = element_rect(color = "black", fill = NA),
-              panel.spacing = unit(0.1, "lines"),
-              strip.background = element_rect(color = "black", fill = NA))
+c_heatmap <- emiheatmap(data = c_stat_sum, 
+                        response_vars = c("c_CO2", "c_CH4", "c_NH3"))
 
 # Save plots
 ggsave("heatmap_cv.pdf", plot = c_heatmap, device = "pdf",
