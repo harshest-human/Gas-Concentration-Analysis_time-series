@@ -405,96 +405,6 @@ emiheatmap <- function(data, response_vars, group_var = "analyzer") {
         return(p)
 }
 
-# Development of function correlogram plot
-emicorrgram <- function(data, target_variable) {
-        library(dplyr)
-        library(tidyr)
-        library(ggplot2)
-        library(scales)
-        
-        # Step 1: Filter & assign side
-        filtered <- data %>%
-                filter(variable == target_variable) %>%
-                mutate(
-                        side = case_when(
-                                grepl("North", location, ignore.case = TRUE) ~ "North",
-                                grepl("South", location, ignore.case = TRUE) ~ "South",
-                                TRUE ~ NA_character_
-                        )
-                ) %>%
-                filter(!is.na(side)) %>%
-                select(DATE.TIME, analyzer, side, var_type, value)
-        
-        # Get var_type label for legend/title
-        vtype <- unique(filtered$var_type)
-        vtype <- ifelse(length(vtype) == 1, vtype, "Value")
-        title_label <- paste0("Correlation of ", target_variable, " (", vtype, ")")
-        
-        # Step 2: Compute correlation for each side and reshape long
-        cor_long <- filtered %>%
-                group_by(side) %>%
-                group_modify(~ {
-                        pivoted <- .x %>%
-                                pivot_wider(names_from = analyzer, values_from = value) %>%
-                                select(-DATE.TIME) %>%
-                                mutate(across(everything(), as.numeric))
-                        
-                        cor_mat <- cor(pivoted, use = "pairwise.complete.obs")
-                        cor_mat[upper.tri(cor_mat, diag = TRUE)] <- NA
-                        
-                        as.data.frame(as.table(cor_mat)) %>%
-                                filter(!is.na(Freq)) %>%
-                                rename(Var1 = Var1, Var2 = Var2, correlation = Freq)
-                }) %>%
-                ungroup()
-        
-        # Define breaks and matching colors (11 each)
-        breaks <- seq(-1, 1, length.out = 21)
-        
-        colors <- c(
-                "darkred",    # -1.0
-                "darkred",    # -0.9
-                "darkred",    # -0.8
-                "orangered4", # -0.7
-                "orangered4", # -0.6
-                "orangered3", # -0.5
-                "orangered3", # -0.4
-                "orangered3", # -0.3
-                "orangered2", # -0.2
-                "orange",     # -0.1
-                "white",      #  0.0
-                "yellow",     #  0.05
-                "yellow",     #  0.1
-                "yellow",     #  0.2
-                "gold",       #  0.3
-                "gold",       #  0.4
-                "gold",       #  0.5
-                "gold3",      #  0.6
-                "green3",     #  0.7
-                "green4",     #  0.8
-                "darkgreen"   #  1.0
-        )
-        values <- scales::rescale(breaks, to = c(0, 1))
-        
-        p <- ggplot(cor_long, aes(x = Var1, y = Var2, fill = correlation)) +
-                geom_tile(color = "white") +
-                geom_text(aes(label = round(correlation, 2)), size = 3) +
-                scale_fill_gradientn(
-                        colors = colors,
-                        values = values,
-                        limits = c(-1, 1),
-                        name = "Correlation"
-                ) +
-                labs(title = title_label, x = NULL, y = NULL) +
-                theme_classic() +
-                theme(
-                        axis.text.x = element_text(angle = 45, hjust = 1),
-                        panel.border = element_rect(colour = "black", fill = NA)
-                ) +
-                facet_wrap(~ side)
-        
-        print(p)
-}
 ######## Import Gas Data #########
 # Load animal and temperature data
 animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
@@ -566,6 +476,11 @@ c_stat_sum <- stat_table(
         response_vars = c("c_CO2", "c_CH4", "c_NH3"),
         group_vars = c("analyzer", "location"))
 
+d_stat_sum <- stat_table(
+        data = emission_reshaped,
+        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        group_vars = c("analyzer", "location"))
+
 q_stat_sum <- stat_table(
         data = emission_reshaped,
         response_vars = c("Q_Vent_rate"),
@@ -578,6 +493,7 @@ e_stat_sum <- stat_table(
 
 # Write stat summary as csv
 readr::write_excel_csv(c_stat_sum, "c_stat_summary.csv")
+readr::write_excel_csv(d_stat_sum, "d_stat_summary.csv")
 readr::write_excel_csv(e_stat_sum, "e_stat_summary.csv")
 readr::write_excel_csv(q_stat_sum, "q_stat_summary.csv")
 
@@ -658,9 +574,16 @@ for (plot_name in names(dailyplots)) {
 c_heatmap <- emiheatmap(data = c_stat_sum, 
                         response_vars = c("c_CO2", "c_CH4", "c_NH3"))
 
+d_heatmap <- emiheatmap(data = d_stat_sum, 
+                        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3"))
+
 # Save plots
-ggsave("heatmap_cv.pdf", plot = c_heatmap, device = "pdf",
-       width = 15.5, height = 8.75, , dpi = 300)
+ggsave("c_heatmap_cv.pdf", plot = c_heatmap, device = "pdf",
+       width = 13, height = 8.5, dpi = 300)
+
+# Save plots
+ggsave("d_heatmap_cv.pdf", plot = d_heatmap, device = "pdf",
+       width = 13, height = 8.5, dpi = 300)
 
 
 ########## Boxplots (HSD) ventilation and emission rates ##############
@@ -681,15 +604,3 @@ ggsave(filename = "e_boxplot.pdf",
 ggsave(filename = "q_boxplot.pdf",
        plot = q_boxplot,
        width = 13, height = 5.8, dpi = 300)
-
-########## Correlograms ##############
-# Plotting by function
-e_NH3_corrgram <- emicorrgram(emission_reshaped, target_variable = "e_NH3")
-e_CH4_corrgram <- emicorrgram(emission_reshaped, target_variable = "e_CH4")
-q_vent_corrgram <- emicorrgram(emission_reshaped, target_variable = "Q_Vent_rate")
-
-# Save as PDFs
-ggsave("e_NH3_corrgram.pdf", plot = e_NH3_corrgram, width = 10, height = 5, dpi = 300)
-ggsave("e_CH4_corrgram.pdf", plot = e_CH4_corrgram, width = 10, height = 5, dpi = 300)
-ggsave("q_vent_corrgram.pdf", plot = q_vent_corrgram, width = 10, height = 5, dpi = 300)
-
