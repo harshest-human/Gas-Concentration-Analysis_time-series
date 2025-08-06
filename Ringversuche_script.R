@@ -21,6 +21,7 @@ library(ggridges)
 library(rstatix)
 library(multcompView)
 library(viridis)
+library(ggpattern)
 
 ######## Development of functions #######
 # Development of indirect.CO2.balance function
@@ -350,8 +351,103 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
                         legend.box.just = "left",
                         legend.title = element_blank(),
                         legend.text = element_text(size = 12),
-                        legend.key.width = unit(0.1, "lines")
+                        legend.key.width = unit(1, "lines")
                 )
+        
+        print(p)
+        return(p)
+}
+
+# Development of function Bar Stack Plot 
+emistackplot <- function(data, vars = c("CO2", "CH4", "NH3")) {
+        library(dplyr)
+        library(tidyr)
+        library(ggplot2)
+        library(scales)
+        library(grid)
+        library(ggpattern)
+        
+        x <- "analyzer"
+        xlab_to_use <- "Analyzer"
+        ylab_to_use <- "Fraction of Inside and Outside (%)"
+        
+        # Step 1: Select relevant columns
+        cols_needed <- c("day", "hour", "lab", x,
+                         paste0(rep(vars, each = 3), c("_in", "_N", "_S")))
+        df <- data %>% select(all_of(cols_needed))
+        
+        # Step 2: Pivot longer
+        df_long <- df %>%
+                pivot_longer(
+                        cols = -c(day, hour, lab, all_of(x)),
+                        names_to = c("var", "loc"),
+                        names_pattern = "(.*)_(in|N|S)",
+                        values_to = "value"
+                )
+        
+        # Step 3: Summarise
+        df_in_out <- df_long %>%
+                pivot_wider(names_from = loc, values_from = value) %>%
+                select(all_of(c(x, "var", "in", "N", "S"))) %>%
+                group_by(across(all_of(c(x, "var")))) %>%
+                summarise(
+                        mean_in = mean(`in`, na.rm = TRUE),
+                        mean_N = mean(N, na.rm = TRUE),
+                        mean_S = mean(S, na.rm = TRUE),
+                        .groups = "drop"
+                )
+        
+        # Step 4: Stack for North and South
+        df_plot <- df_in_out %>%
+                pivot_longer(cols = c(mean_in, mean_N), names_to = "part", values_to = "mean_val") %>%
+                mutate(location = "North Background") %>%
+                bind_rows(
+                        df_in_out %>%
+                                pivot_longer(cols = c(mean_in, mean_S), names_to = "part", values_to = "mean_val") %>%
+                                mutate(location = "South Background")
+                ) %>%
+                mutate(
+                        part = recode(part, mean_in = "Inside", mean_N = "Outside", mean_S = "Outside")
+                )
+        
+        # Step 5: Calculate fraction
+        # Step 5: Calculate fraction
+        df_plot <- df_plot %>%
+                group_by(across(all_of(c(x, "location", "var")))) %>%
+                mutate(fraction = mean_val / sum(mean_val, na.rm = TRUE)) %>%
+                ungroup() %>%
+                mutate(fraction = ifelse(is.na(fraction), 0, fraction)) %>%
+                mutate(var = recode(var,
+                                    "NHCO" = "NH3/CO2",
+                                    "CHCO" = "CH4/CO2"))  # <- rename for facet
+        
+        # Step 6: Plot with pattern fills
+        p <- ggplot(df_plot, aes_string(x = x, y = "fraction", fill = "part")) +
+                geom_bar(stat = "identity", position = "stack", width = 0.7) +
+                facet_grid(var ~ location, scales = "free_y", switch = "y") +
+                scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, NA)) +
+                scale_fill_manual(values = c("Inside" = "skyblue", "Outside" = "steelblue4")) +
+                labs(
+                        x = xlab_to_use,
+                        y = ylab_to_use,
+                        fill = ""
+                ) +
+                theme_classic() +
+                theme(
+                        text = element_text(size = 10),
+                        axis.text = element_text(size = 10),
+                        axis.title = element_text(size = 10),
+                        strip.text = element_text(size = 10),
+                        panel.border = element_rect(colour = "black", fill = NA),
+                        axis.text.x = element_text(angle = 45, hjust = 1),
+                        legend.position = "bottom",
+                        legend.direction = "horizontal",
+                        legend.box = "horizontal",
+                        legend.title = element_blank(),
+                        legend.text = element_text(size = 10),
+                        legend.key.width = unit(1, "lines")
+                )
+        
         
         print(p)
         return(p)
@@ -639,15 +735,41 @@ write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 
 ######## Hourly Mean ± SD Trend Plots ########
-c_r_erbr_plot <- emiconplot(data = emission_reshaped,
-                          x = "hour",
-                          y = c("Err_CO2", "Err_CH4", "Err_NH3", "Err_NH3/CO2", "Err_CH4/CO2"),
-                          var_type_filter = "error")
+# Concentrations only
+c_plot <- emiconplot(
+        data = emission_reshaped,
+        x = "hour",
+        y = c("CO2", "CH4", "NH3"),
+        var_type_filter = "concentration")
 
-q_e_erbr_plot <- emiconplot(data = emission_reshaped,
-                          x = "hour",
-                          y = c("Err_Q_Vent_rate","Err_e_CH4", "Err_e_NH3"),
-                          var_type_filter = "error")
+# Delta variables only
+d_plot <- emiconplot(
+        data = emission_reshaped,
+        x = "hour",
+        y = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        var_type_filter = "delta")
+
+# Ratios only
+r_plot <- emiconplot(
+        data = emission_reshaped,
+        x = "hour",
+        y = c("NH3/CO2", "CH4/CO2"),
+        var_type_filter = "ratio")
+
+# Emissions only
+e_plot <- emiconplot(
+        data = emission_reshaped,
+        x = "hour",
+        y = c("e_CH4", "e_NH3"),
+        var_type_filter = "emission")
+
+# Ventilation only
+q_plot <- emiconplot(
+        data = emission_reshaped,
+        x = "hour",
+        y = c("Q_Vent_rate"),
+        var_type_filter = "ventilation")
+
 
 #save plots
 ggsave(filename = "c_r_erbr_plot.pdf",
@@ -658,6 +780,15 @@ ggsave(filename = "c_r_erbr_plot.pdf",
 ggsave(filename = "q_e_erbr_plot.pdf",
        plot = q_e_erbr_plot,
        width = 13, height = 7,
+       dpi = 100)
+
+########### Stackplot Ratios ##########
+c_diff_stack <- emistackplot(data = emission_combined, vars = c("CO2", "CH4", "NH3"))
+
+#save plots
+ggsave(filename = "c_diff_stack.pdf",
+       plot = c_diff_stack,
+       width = 10, height = 6,
        dpi = 100)
 
 ########## Heat maps (CV) #############
