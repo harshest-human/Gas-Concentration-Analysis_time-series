@@ -21,7 +21,6 @@ library(ggridges)
 library(rstatix)
 library(multcompView)
 library(viridis)
-library(ggpattern)
 
 ######## Development of functions #######
 # Development of indirect.CO2.balance function
@@ -411,7 +410,6 @@ emistackplot <- function(data, vars = c("CO2", "CH4", "NH3")) {
                 )
         
         # Step 5: Calculate fraction
-        # Step 5: Calculate fraction
         df_plot <- df_plot %>%
                 group_by(across(all_of(c(x, "location", "var")))) %>%
                 mutate(fraction = mean_val / sum(mean_val, na.rm = TRUE)) %>%
@@ -421,9 +419,9 @@ emistackplot <- function(data, vars = c("CO2", "CH4", "NH3")) {
                                     "NHCO" = "NH3/CO2",
                                     "CHCO" = "CH4/CO2"))  # <- rename for facet
         
-        # Step 6: Plot with pattern fills
+        # Step 6: Plot fraction
         p <- ggplot(df_plot, aes_string(x = x, y = "fraction", fill = "part")) +
-                geom_bar(stat = "identity", position = "stack", width = 0.7) +
+                geom_bar(stat = "identity", position = "stack", width = 0.3, color = "black") +
                 facet_grid(var ~ location, scales = "free_y", switch = "y") +
                 scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, NA)) +
                 scale_fill_manual(values = c("Inside" = "skyblue", "Outside" = "steelblue4")) +
