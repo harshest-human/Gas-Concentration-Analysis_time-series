@@ -21,6 +21,7 @@ library(ggridges)
 library(rstatix)
 library(multcompView)
 library(viridis)
+library(lme4)
 
 ######## Development of functions #######
 # Development of indirect.CO2.balance function
@@ -41,14 +42,17 @@ indirect.CO2.balance <- function(df) {
                         n_LU = (n_animals * m_weight) / 500,
                         P_CO2_T_A_all_animal = hpu_T_A_cor_all_animal * P_CO2_term,
                         
-                        # Concentration differences (mg m3)
-                        delta_NH3_N = NH3_in - NH3_N,
-                        delta_CH4_N = CH4_in - CH4_N,
-                        delta_CO2_N = CO2_in - CO2_N,
+                        # CO2 differences (mg/m3)
+                        delta_CO2_N = CO2_mgm3_in - CO2_mgm3_N,
+                        delta_CO2_S = CO2_mgm3_in - CO2_mgm3_S,
                         
-                        delta_NH3_S = NH3_in - NH3_S,
-                        delta_CH4_S = CH4_in - CH4_S,
-                        delta_CO2_S = CO2_in - CO2_S,
+                        # CH4 differences (mg/m3)
+                        delta_CH4_N = CH4_mgm3_in - CH4_mgm3_N,
+                        delta_CH4_S = CH4_mgm3_in - CH4_mgm3_S,
+                        
+                        # NH3 differences (mg/m3)
+                        delta_NH3_N = NH3_mgm3_in - NH3_mgm3_N,
+                        delta_NH3_S = NH3_mgm3_in - NH3_mgm3_S,
                         
                         # Ventilation rate (m³/h)
                         Q_Vent_rate_N = P_CO2_T_A_all_animal / ((delta_CO2_N) * 1e-6),
@@ -61,19 +65,19 @@ indirect.CO2.balance <- function(df) {
                         e_CH4_S = (delta_CH4_S * Q_Vent_rate_S) / 1000,
                         
                         # NH3 to CO2 ratios (%)
-                        NHCO_in = (NH3_in / CO2_in) * 100,
-                        NHCO_N  = (NH3_N  / CO2_N) * 100,
-                        NHCO_S  = (NH3_S  / CO2_S) * 100,
+                        NHCO_in = (NH3_ppm_in / CO2_ppm_in) * 100,
+                        NHCO_N  = (NH3_ppm_N  / CO2_ppm_N) * 100,
+                        NHCO_S  = (NH3_ppm_S  / CO2_ppm_S) * 100,
                         
                         # NH3 to CH4 ratios (%)
-                        NHCH_in = (NH3_in / CH4_in) * 100,
-                        NHCH_N  = (NH3_N  / CH4_N) * 100,
-                        NHCH_S  = (NH3_S  / CH4_S) * 100,
+                        NHCH_in = (NH3_ppm_in / CH4_ppm_in) * 100,
+                        NHCH_N  = (NH3_ppm_N  / CH4_ppm_N) * 100,
+                        NHCH_S  = (NH3_ppm_S  / CH4_ppm_S) * 100,
                         
                         # CH4 to CO2 ratios (%)
-                        CHCO_in = (CH4_in / CO2_in) * 100,
-                        CHCO_N  = (CH4_N  / CO2_N) * 100,
-                        CHCO_S  = (CH4_S  / CO2_S) * 100
+                        CHCO_in = (CH4_ppm_in / CO2_ppm_in) * 100,
+                        CHCO_N  = (CH4_ppm_N  / CO2_ppm_N) * 100,
+                        CHCO_S  = (CH4_ppm_S  / CO2_ppm_S) * 100
                 )
 }
 
@@ -598,36 +602,42 @@ emiheatmap <- function(data, response_vars, group_var = "analyzer", var_type_fil
         return(p)
 }
 
-######## Import Gas Data #########
-# Load animal and temperature data
-animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
-
-# Read and convert DATE.TIME for FTIR data
-ATB_FTIR <- read.csv("20250408-15_long_ATB_FTIR.1.csv")
-LUFA_FTIR <- read.csv("20250408-15_long_LUFA_FTIR.2.csv")
-MBBM_FTIR <- read.csv("20250408-15_long_MBBM_FTIR.3.csv")
-ANECO_FTIR <- read.csv("20250408-15_long_ANECO_FTIR.4.csv")
-
-# Read and convert DATE.TIME for CRDS data
-ATB_CRDS <- read.csv("20250408-15_long_ATB_CRDS.1.csv")
-UB_CRDS <- read.csv("20250408-15_long_UB_CRDS.2.csv")
-LUFA_CRDS <- read.csv("20250408-15_long_LUFA_CRDS.3.csv")
+######## Import Data #########
+# Read all gas data
+ATB_FTIR <- read.csv("20250408-15_ATB_wide_FTIR.1.csv")
+LUFA_FTIR <- read.csv("20250408-15_LUFA_wide_FTIR.2.csv")
+MBBM_FTIR <- read.csv("20250408-15_MBBM_wide_FTIR.4.csv")
+ANECO_FTIR <- read.csv("20250408-15_ANECO_wide_FTIR.4.csv")
+ATB_CRDS <- read.csv("20250408-15_ATB_wide_CRDS.1.csv")
+UB_CRDS <- read.csv("20250408-15_UB_wide_CRDS.2.csv")
+LUFA_CRDS <- read.csv("20250408-15_LUFA_wide_CRDS.3.csv")
 
 # Combine all data set
-gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS)
-input_combined <-full_join(gas_data, animal_temp, by = "DATE.TIME") %>%
-        mutate(day = as.Date(DATE.TIME)) %>% 
-        select(DATE.TIME, day, hour, everything())%>%
-        mutate(across(where(is.numeric) & !any_of(c("hour")), ~ round(.x, 2)))
+start_time = "2025-04-08 12:00:00"
+end_time = "2025-04-14 12:00:00"
+
+gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS) %>%
+        mutate(DATE.TIME = floor_date(ymd_hms(DATE.TIME), unit = "hour")) %>%
+        filter(DATE.TIME >= ymd_hms(start_time) & DATE.TIME <= ymd_hms(end_time)) %>%
+        mutate(day = as.Date(DATE.TIME), hour = hour(DATE.TIME)) %>%
+        select(DATE.TIME, day, hour, everything()) %>%
+        mutate(across(where(is.numeric) & !any_of("hour"), ~ round(.x, 2)))
+                                      
+
+gas_data %>% count(day, analyzer, name = "n_obs") #to check how many observations
+        
+#Read animal data 
+animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv") %>%
+        mutate(DATE.TIME = floor_date(ymd_hms(DATE.TIME), unit = "hour"))%>%
+        filter(DATE.TIME >= ("2025-04-08 12:00:00") & DATE.TIME <= ("2025-04-14 12:00:00"))
+
+input_combined <-left_join(gas_data, animal_temp, by = "DATE.TIME", relationship = "many-to-many")
 
 # Write csv
 input_combined <- input_combined %>% select(DATE.TIME, hour, everything())
 write_excel_csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv")
 
 ######## Computation of ratios, ventilation rates and emissions #########
-# Convert DATE.TIME format
-input_combined <- input_combined %>% filter(DATE.TIME >= "2025-04-08 12:00:00" & DATE.TIME <= "2025-04-14 10:00:00")
-
 # Calculate emissions using the function
 emission_combined  <- indirect.CO2.balance(input_combined)
 
@@ -732,6 +742,56 @@ result_HSD_summary <- HSD_table(data = emission_clean,
 write_excel_csv(result_HSD_summary, "20250408_20250414_HSD_table.csv")
 
 
+######### Linear mix modelling ##########
+#Data processing
+# Load animal, temperature, and wind data
+animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv")
+T_RH_HOBO <- read.csv("T_RH_08_04_2025_To_30_06_2025.csv")
+USA_Mst <- read.csv("USA_Mst_5_min_2025_04_08.csv")
+USA_Trv <- read.csv("USA_Trv_5_min_2025_04_08.csv")
+
+T_RH_HOBO <- T_RH_HOBO %>%
+        mutate(date = trimws(date),
+               time = trimws(time))
+
+env_anm_data <- T_RH_HOBO %>%
+        mutate(
+                # Combine date and time as character string
+                datetime_str = paste(date, time),
+                # Parse using strptime with explicit format
+                DATE.TIME = as.POSIXct(strptime(datetime_str, format = "%d/%m/%y %H:%M:%S")),
+                # Floor to hour
+                DATE.TIME = floor_date(DATE.TIME, "hour")
+        ) %>%
+        group_by(DATE.TIME) %>%
+        summarise(
+                T_outside = mean(T_outside, na.rm = TRUE),
+                RH_out = mean(RH_out, na.rm = TRUE),
+                T_inside = mean(T_inside, na.rm = TRUE),
+                RH_inside = mean(RH_inside, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+library(lme4)
+
+# Fit the model
+q_model <- lmer(value ~ 1 + (1 | analyzer), data = emission_reshaped %>% filter(variable == "Q_Vent_rate"))
+
+# Extract variance components
+var_comp <- as.data.frame(VarCorr(q_model))
+
+# Between-analyzer variance
+sigma_R2 <- var_comp$vcov[var_comp$grp == "analyzer"]
+
+# Within-analyzer variance (residual)
+sigma_r2 <- var_comp$vcov[var_comp$grp == "Residual"]
+
+# Calculate ICC
+icc <- sigma_R2 / (sigma_R2 + sigma_r2)
+
+cat("Between-analyzer variance (sigma_R^2):", sigma_R2, "\n")
+cat("Within-analyzer variance (sigma_r^2):", sigma_r2, "\n")
+cat("Intraclass correlation coefficient (ICC):", round(icc, 3), "\n")
 ######## Hourly Mean ± SD Trend Plots ########
 # Concentrations only
 c_plot <- emiconplot(
@@ -769,17 +829,30 @@ q_plot <- emiconplot(
         var_type_filter = "ventilation")
 
 
-#save plots
-ggsave(filename = "c_r_erbr_plot.pdf",
-       plot = c_r_erbr_plot,
-       width = 18, height = 12,
-       dpi = 100)
+# Named list of plots
+dailyplots <- list(
+        c_plot = c_plot,
+        r_plot = r_plot,
+        d_plot = d_plot,
+        q_plot = q_plot,
+        e_plot = e_plot)
 
-ggsave(filename = "q_e_erbr_plot.pdf",
-       plot = q_e_erbr_plot,
-       width = 13, height = 7,
-       dpi = 100)
+# coresponding size settings (width, height)
+plot_sizes <- list(
+        c_plot = c(18, 8.5),
+        r_plot = c(18, 6.5),
+        d_plot = c(14, 6.5),
+        q_plot = c(14, 4.4),
+        e_plot = c(14, 6.5))
 
+# Save each plot using its specific size
+for (plot_name in names(dailyplots)) {
+        size <- plot_sizes[[plot_name]]
+        ggsave(
+                filename = paste0(plot_name, ".pdf"),
+                plot = dailyplots[[plot_name]],
+                width = size[1], height = size[2], dpi = 300)
+}
 ########### Stackplot Ratios ##########
 c_diff_stack <- emistackplot(data = emission_combined, vars = c("CO2", "CH4", "NH3"))
 
