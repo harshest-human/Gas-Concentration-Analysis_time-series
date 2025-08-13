@@ -106,44 +106,20 @@ indirect.CO2.balance <- function(df) {
 ratcal <- function(df) {
         library(dplyr)
         
-        gases <- c("NH3", "CO2", "CH4")
+        gases_to_compare <- c("CH4", "NH3")
         locations <- c("in", "N", "S")
         
-        # 1. Ratios: in / N and in / S for same gases
-        for (gas in gases) {
-                for (loc in locations[-1]) {  # only N and S
-                        col_in <- paste0(gas, "_mgm3_in")
-                        col_loc <- paste0(gas, "_mgm3_", loc)
-                        ratio_col <- paste0("r_", gas, "_in/", gas, "_", loc)
-                        
-                        df <- df %>%
-                                mutate(
-                                        !!ratio_col := round(
-                                                ifelse(.data[[col_loc]] != 0,
-                                                       .data[[col_in]] / .data[[col_loc]] * 100,
-                                                       NA_real_),
-                                                2
-                                        )
-                                )
-                }
-        }
-        
-        # 2. Ratios: CH4 / CO2 and NH3 / CO2 at the same location (in, N, S)
-        gases_to_compare <- c("CH4", "NH3")
         for (gas in gases_to_compare) {
                 for (loc in locations) {
                         col_gas <- paste0(gas, "_mgm3_", loc)
                         col_CO2 <- paste0("CO2_mgm3_", loc)
-                        ratio_col <- paste0("r_", gas, "_", loc, "/CO2_", loc)
+                        ratio_col <- paste0("r_", gas, "/CO2_", loc)  # only one location suffix
                         
                         df <- df %>%
                                 mutate(
-                                        !!ratio_col := round(
-                                                ifelse(.data[[col_CO2]] != 0,
-                                                       .data[[col_gas]] / .data[[col_CO2]] * 100,
-                                                       NA_real_),
-                                                2
-                                        )
+                                        !!ratio_col := ifelse(.data[[col_CO2]] != 0,
+                                                              .data[[col_gas]] / .data[[col_CO2]] * 100,
+                                                              NA_real_)
                                 )
                 }
         }
@@ -399,13 +375,14 @@ emiconplot <- function(data, y = NULL, var_type_filter = NULL, x = "day") {
         # Clean facet labels
         summary_data <- summary_data %>%
                 mutate(
-                        variable_clean = case_when(
-                                str_detect(variable, "_mgm3$") ~ str_remove(variable, "_mgm3$"),
-                                str_detect(variable, "^delta_") ~ str_remove(variable, "^delta_"),
-                                str_detect(variable, "^Q_vent") ~ "Q",
-                                str_detect(variable, "^e_") ~ str_remove(variable, "^e_"),
-                                TRUE ~ variable
-                        )
+                        variable_clean = variable %>%
+                                str_remove("^e_") %>%           # remove e_ prefix
+                                str_remove("^delta_") %>%       # remove delta_ prefix
+                                str_remove("_mgm3$") %>%        # remove mgm3 suffix
+                                str_remove("_g_h$") %>%         # remove g_h suffix
+                                str_remove("_kg_yr$") %>%       # remove kg_yr suffix
+                                str_remove("^r_") %>%           # remove r_ prefix
+                                str_replace("^Q_vent.*", "Q")   # rename ventilation
                 )
         
         # Y-axis labels by var_type
@@ -647,7 +624,7 @@ gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA
                        DATE.TIME <= ymd_hms(end_time, tz = "UTC")) %>%
         select(DATE.TIME, analyzer, everything(), -lab) %>%
         arrange(DATE.TIME) %>% distinct() 
-                                      
+
 gas_data %>% count(DATE.TIME, analyzer, name = "n_obs") #to check how many observations
 
 
@@ -670,12 +647,19 @@ input_combined <- input_combined %>% mutate(across(where(is.numeric), ~ round(.x
 
 write_excel_csv(input_combined, "20250408-15_ringversuche_input_combined_data.csv")
 
-######## Computation of ratios, ventilation rates and emissions #########
+######## Computation of emissions, ventilation rates and ratios #########
 # Calculate emissions and ratios using the function
-emission_result  <- indirect.CO2.balance(input_combined)
+emission_result <- indirect.CO2.balance(input_combined)
+
+# Remove constants and forumal inputs
+emission_result <- emission_result %>% select(-n_dairycows, -m_weight, -p_pregnancy_day, 
+                                              -Y1_milk_prod, -temp_inside, -a, -h_min,
+                                              -phi, -t_factor, -phi_T_cor, -A_cor,
+                                              -hpu_T_A_cor_per_cow, -hpu_T_A_cor_all)
 
 # Calculate gas ratios using function
 emission_and_ratio <- ratcal(emission_result) 
+
 # Write csv
 write_excel_csv(emission_and_ratio, "20250408-15_ringversuche_emission_and_ratio.csv")
 
@@ -688,11 +672,8 @@ vars <- c(
         "CH4_mgm3_in", "CH4_mgm3_N", "CH4_mgm3_S",
         
         # Ratios
-        "r_NH3_in/NH3_N", "r_NH3_in/NH3_S",
-        "r_CO2_in/CO2_N", "r_CO2_in/CO2_S",
-        "r_CH4_in/CH4_N", "r_CH4_in/CH4_S",
-        "r_CH4_in/CO2_in", "r_CH4_N/CO2_N", "r_CH4_S/CO2_S",
-        "r_NH3_in/CO2_in", "r_NH3_N/CO2_N", "r_NH3_S/CO2_S",
+        "r_CH4/CO2_in", "r_CH4/CO2_N", "r_CH4/CO2_S",
+        "r_NH3/CO2_in", "r_NH3/CO2_N", "r_NH3/CO2_S",
         
         # Deltas
         "delta_CO2_N", "delta_CO2_S",
@@ -765,7 +746,7 @@ e_stat_sum <- stat_table(
         data = emission_reshaped,
         response_vars = c("e_CH4_g_h", "e_CH4_kg_yr", "e_NH3_g_h", "e_NH3_kg_yr",
                           "err_e_CH4_g_h", "err_e_CH4_kg_yr", "err_e_NH3_g_h", "err_e_NH3_kg_yr"),
-        var_type_filter = c("emission per hour", "emission per year",
+        var_type_filter = c("emission gram per hour", "emission per year",
                             "emission per hour relative error", "emission per year relative error"),
         group_vars = c("analyzer", "location"),
         time_group = "day")
@@ -829,36 +810,39 @@ c_plot <- emiconplot(
         y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         var_type_filter = "concentration measured")
 
-# Delta variables only
-d_plot <- emiconplot(
-        data = emission_reshaped,
-        x = "hour",
-        y = c("delta_CO2", "delta_CH4", "delta_NH3"),
-        var_type_filter = "concentration delta")
-
 # Ratios only
 r_plot <- emiconplot(
         data = emission_reshaped,
-        x = "hour",
-        y = c("NH3/CO2", "CH4/CO2"),
+        x = "day",
+        y = c("r_CH4/CO2", "r_NH3/CO2"),
         var_type_filter = "concentration ratio percentage")
 
-# Emissions only
-e_plot <- emiconplot(
+# Delta variables only
+d_plot <- emiconplot(
         data = emission_reshaped,
-        x = "hour",
-        y = c("e_CH4", "e_NH3"),
-        var_type_filter = "emission per hour")
+        x = "day",
+        y = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        var_type_filter = "concentration delta")
 
 # Ventilation only
 q_plot <- emiconplot(
-        data = emission_reshaped,
-        x = "hour",
-        y = c("Q_Vent_rate"),
-        var_type_filter = "ventilation rate"
-)
+        data = emission_reshaped %>% filter(analyzer != "FTIR.4"),
+        x = "day",
+        y = c("Q_vent"),
+        var_type_filter = "ventilation rate")
 
+# Emissions only
+e_g_plot <- emiconplot(
+        data = emission_reshaped %>% filter(analyzer != "FTIR.4"),
+        x = "day",
+        y = c("e_CH4_g_h", "e_NH3_g_h"),
+        var_type_filter = "emission gram per hour")
 
+e_kg_plot <- emiconplot(
+        data = emission_reshaped %>% filter(analyzer != "FTIR.4"),
+        x = "day",
+        y = c("e_CH4_kg_yr", "e_NH3_kg_yr"),
+        var_type_filter = "emission per year")
 
 # Named list of plots
 dailyplots <- list(
@@ -866,15 +850,17 @@ dailyplots <- list(
         r_plot = r_plot,
         d_plot = d_plot,
         q_plot = q_plot,
-        e_plot = e_plot)
+        e_g_plot = e_g_plot,
+        e_kg_plot = e_kg_plot)
 
-# coresponding size settings (width, height)
+# Corresponding size settings (width, height)
 plot_sizes <- list(
         c_plot = c(18, 8.5),
         r_plot = c(18, 6.5),
         d_plot = c(14, 6.5),
         q_plot = c(14, 4.4),
-        e_plot = c(14, 6.5))
+        e_g_plot = c(14, 6.5),
+        e_kg_plot = c(14, 6.5))
 
 # Save each plot using its specific size
 for (plot_name in names(dailyplots)) {
@@ -884,24 +870,11 @@ for (plot_name in names(dailyplots)) {
                 plot = dailyplots[[plot_name]],
                 width = size[1], height = size[2], dpi = 300)
 }
-########### Stackplot Ratios ##########
-c_diff_stack <- emistackplot(data = emission_combined, vars = c("CO2", "CH4", "NH3"))
 
-#save plots
-ggsave(filename = "c_diff_stack.pdf",
-       plot = c_diff_stack,
-       width = 10, height = 6,
-       dpi = 100)
 
 ########## Heat maps (CV) #############
-c_heatmap <- emiheatmap(data = c_stat_sum,
-                        response_vars = c("CO2", "CH4", "NH3"))
-
-r_heatmap <- emiheatmap(data = r_stat_sum, 
-                        response_vars = c("NH3/CO2", "CH4/CO2"))
-
 q_heatmap <- emiheatmap(data = q_stat_sum, 
-                        response_vars = c("Q_Vent_rate"))
+                        response_vars = c("Q_vent"))
 
 e_heatmap <- emiheatmap(data = e_stat_sum, 
                         response_vars = c("e_CH4", "e_NH3"))
