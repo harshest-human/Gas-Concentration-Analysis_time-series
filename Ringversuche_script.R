@@ -261,21 +261,21 @@ stat_table <- function(data, response_vars, group_vars = NULL, var_type_filter =
                 df <- df %>% filter(var_type %in% var_type_filter)
         }
         
+        # Keep only desired variables
+        df <- df %>% filter(var %in% response_vars)
+        
         # Create time grouping column
         df <- df %>%
                 mutate(
                         time_grp = if (time_group == "hour") {
-                                lubridate::hour(DATE.TIME)   # numeric hour
+                                lubridate::hour(DATE.TIME)
                         } else {
-                                as.Date(DATE.TIME)           # date for day
+                                as.Date(DATE.TIME)
                         }
                 )
         
-        # Ensure response_vars exist in 'var' column
-        df <- df %>% filter(var %in% response_vars)
-        
         # Group and summarise
-        df %>%
+        summary_df <- df %>%
                 group_by(across(all_of(c("time_grp", group_vars))), var) %>%
                 summarise(
                         n    = n(),
@@ -283,8 +283,13 @@ stat_table <- function(data, response_vars, group_vars = NULL, var_type_filter =
                         sd   = round(sd(value, na.rm = TRUE), 2),
                         cv   = round(DescTools::CoefVar(value, na.rm = TRUE) * 100, 2),
                         .groups = "drop"
-                ) %>%
-                rename(time = time_grp)
+                )
+        
+        # Rename the time column based on time_group
+        time_col_name <- if (time_group == "hour") "hour" else "day"
+        summary_df <- summary_df %>% rename(!!time_col_name := time_grp)
+        
+        return(summary_df)
 }
 
 # Development of function HSD_table
@@ -542,62 +547,69 @@ emiboxplot <- function(data, response_vars, group_var = "analyzer", var_type_fil
 }
 
 # Development of function emiheatmap
-emiheatmap <- function(data, response_vars, group_var = "analyzer", var_type_filter = NULL) {
+emiheatmap <- function(stat_df, y = NULL, group_var = "analyzer", time_group = c("hour", "day")) {
         library(dplyr)
         library(ggplot2)
-        library(viridis)
         
-        facet_x <- "location"
-        facet_y <- "variable"
+        time_group <- match.arg(time_group)
         
-        df <- data
+        df <- stat_df
         
-        # Apply var_type filter if specified
-        if (!is.null(var_type_filter)) {
-                df <- df %>% filter(var_type %in% var_type_filter)
+        # Filter by y variables if provided
+        if (!is.null(y)) {
+                df <- df %>% filter(var %in% y)
         }
         
-        # Filter and prepare data
-        data_sub <- df %>%
-                filter(.data[[facet_y]] %in% response_vars,
-                       .data[[group_var]] != "FTIR.4")
+        # Determine the column to use for x-axis
+        x_col <- if (time_group == "hour") {
+                if(!"hour" %in% colnames(df)) stop("Column 'hour' not found in stat_df")
+                "hour"
+        } else {
+                if(!"time" %in% colnames(df)) stop("Column 'time' not found in stat_df for daily plot")
+                "time"
+        }
         
-        data_sub[[group_var]] <- factor(data_sub[[group_var]], levels = sort(unique(data_sub[[group_var]])))
+        # Convert hour to "HH:MM" format
+        if (time_group == "hour") {
+                df$hour_label <- sprintf("%02d:00", df$hour)
+                x_col <- "hour_label"
+        }
+        
+        # Ensure group_var is a factor
+        df[[group_var]] <- factor(df[[group_var]], levels = sort(unique(df[[group_var]])))
+        
+        # Ensure var is a factor for faceting
+        df$var <- factor(df$var, levels = unique(df$var))
+        
+        # Fixed color scale 0-200% with custom gradient
+        legend_breaks <- seq(0, 150, by = 10)
+        custom_colors <- c(
+                "darkgreen","green4", "green2","yellow", "orange", "red", "darkred")
         
         # Plot
-        p <- ggplot(data_sub, aes(x = factor(hour), y = !!sym(group_var), fill = cv)) +
-                geom_tile(color = "black") +
-                facet_grid(reformulate(facet_x, facet_y), scales = "free_y", switch = "y") +
-                scale_fill_viridis_c(
-                        option = "plasma",
-                        name = "CV (%)",
-                        limits = c(0, 200),
-                        breaks = seq(0, 200, 50),
-                        oob = scales::squish,
-                        guide = guide_colorbar(
-                                barwidth = 10,
-                                barheight = 0.6,
-                                title.position = "top",
-                                title.hjust = 0.5
-                        )
+        p <- ggplot(df, aes_string(x = x_col, y = group_var, fill = "cv")) +
+                geom_tile(color = "white") + 
+                facet_grid(location ~ var, scales = "free_y") +
+                scale_fill_gradientn(
+                        colors = custom_colors,
+                        limits = c(0, 150),
+                        breaks = seq(0, 150, by = 30),
+                        name = "CV (%)"
                 ) +
                 labs(
-                        x = "Hour of Day",
-                        y = group_var
+                        x = ifelse(time_group == "hour", "Hour of Day", "Date"),
+                        y = NULL,
+                        title = NULL
                 ) +
                 theme_minimal(base_size = 12) +
-                theme(
-                        panel.grid = element_blank(),
-                        axis.text.x = element_text(size = 12),
-                        axis.text.y = element_text(size = 12),
-                        panel.border = element_rect(color = "black", fill = NA),
-                        panel.spacing = unit(0.1, "lines"),
-                        strip.background = element_rect(color = "black", fill = NA),
-                        strip.text = element_text(size = 12),
-                        legend.position = "bottom",
-                        legend.title = element_text(size = 12),
-                        legend.text = element_text(size = 12)
-                )
+                theme(axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+                      axis.text.y = element_text(size = 10),
+                      strip.text.x = element_blank(),
+                      strip.text = element_text(size = 12),
+                      panel.grid = element_blank(),
+                      legend.position = "bottom",
+                      legend.key.width = unit(2, "cm"),
+                      plot.title = element_blank())
         
         print(p)
         return(p)
@@ -710,7 +722,7 @@ c_stat_sum <- stat_table(
                           "err_CO2_mgm3", "err_CH4_mgm3", "err_NH3_mgm3"),
         var_type_filter = c("concentration measured", "concentration relative error"),
         group_vars = c("analyzer", "location"),
-        time_group = "day")
+        time_group = "hour")
 
 # Delta concentrations and relative error
 d_stat_sum <- stat_table(
@@ -719,7 +731,7 @@ d_stat_sum <- stat_table(
                           "err_delta_CO2", "err_delta_CH4", "err_delta_NH3"),
         var_type_filter = c("concentration delta", "concentration delta relative error"),
         group_vars = c("analyzer", "location"),
-        time_group = "day")
+        time_group = "hour")
 
 # Ratio concentrations and relative error
 r_stat_sum <- stat_table(
@@ -731,7 +743,7 @@ r_stat_sum <- stat_table(
                           "err_r_NH3_in/NH3"),
         var_type_filter = c("concentration ratio percentage", "concentration ratio percentage relative error"),
         group_vars = c("analyzer", "location"),
-        time_group = "day")
+        time_group = "hour")
 
 # Ventilation rates and error
 q_stat_sum <- stat_table(
@@ -739,7 +751,7 @@ q_stat_sum <- stat_table(
         response_vars = c("Q_vent", "err_Q_vent"),
         var_type_filter = c("ventilation rate", "ventilation rate error"),
         group_vars = c("analyzer", "location"),
-        time_group = "day")
+        time_group = "hour")
 
 # Emissions per hour / year and relative error
 e_stat_sum <- stat_table(
@@ -749,7 +761,7 @@ e_stat_sum <- stat_table(
         var_type_filter = c("emission gram per hour", "emission per year",
                             "emission per hour relative error", "emission per year relative error"),
         group_vars = c("analyzer", "location"),
-        time_group = "day")
+        time_group = "hour")
 
 
 # write csv
@@ -855,12 +867,12 @@ dailyplots <- list(
 
 # Corresponding size settings (width, height)
 plot_sizes <- list(
-        c_plot = c(18, 8.5),
-        r_plot = c(18, 6.5),
-        d_plot = c(14, 6.5),
-        q_plot = c(14, 4.4),
-        e_g_plot = c(14, 6.5),
-        e_kg_plot = c(14, 6.5))
+        c_plot = c(12, 8.5),
+        d_plot = c(8.5, 8.5),
+        r_plot = c(11.5, 6.5),
+        q_plot = c(8, 4),
+        e_g_plot = c(9, 6.5),
+        e_kg_plot = c(9, 6.5))
 
 # Save each plot using its specific size
 for (plot_name in names(dailyplots)) {
@@ -873,25 +885,49 @@ for (plot_name in names(dailyplots)) {
 
 
 ########## Heat maps (CV) #############
-q_heatmap <- emiheatmap(data = q_stat_sum, 
-                        response_vars = c("Q_vent"))
+min(q_stat_sum$cv[
+        q_stat_sum$var == "Q_vent" & 
+                q_stat_sum$location == "North background" & 
+                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
 
-e_heatmap <- emiheatmap(data = e_stat_sum, 
-                        response_vars = c("e_CH4", "e_NH3"))
+max(q_stat_sum$cv[
+        q_stat_sum$var == "Q_vent" & 
+                q_stat_sum$location == "North background" & 
+                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
+
+min(q_stat_sum$cv[
+        q_stat_sum$var == "Q_vent" & 
+                q_stat_sum$location == "South background" & 
+                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
+
+max(q_stat_sum$cv[
+        q_stat_sum$var == "Q_vent" & 
+                q_stat_sum$location == "South background" & 
+                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
+
+q_heatmap <- emiheatmap(q_stat_sum %>% filter(analyzer != "FTIR.4"),
+                        y = "Q_vent",
+                        time_group = "hour")
+
+e_CH4_heatmap <- emiheatmap(e_stat_sum %>% filter(analyzer != "FTIR.4"),
+                       y = "e_CH4_g_h",
+                       time_group = "hour")
+
+e_NH3_heatmap <- emiheatmap(e_stat_sum %>% filter(analyzer != "FTIR.4"),
+                            y = "e_NH3_g_h",
+                            time_group = "hour")
 
 # Named list of plots
 dailyplots <- list(
-        c_heatmap = c_heatmap,
-        r_heatmap = r_heatmap,
         q_heatmap = q_heatmap,
-        e_heatmap = e_heatmap)
+        e_CH4_heatmap = e_CH4_heatmap,
+        e_NH3_heatmap = e_NH3_heatmap,)
 
 # coresponding size settings (width, height)
 plot_sizes <- list(
-        c_heatmap = c(18, 8.5),
-        r_heatmap = c(18, 6.5),
         q_heatmap = c(14, 4.4),
-        e_heatmap = c(14, 6.5))
+        e_CH4_heatmap = c(14, 4.4),
+        e_NH3_heatmap = c(14, 4.4))
 
 # Save each plot using its specific size
 for (plot_name in names(dailyplots)) {
@@ -905,7 +941,7 @@ for (plot_name in names(dailyplots)) {
 
 ########## Box plots (HSD) ventilation and emission rates ##############
 e_boxplot <- emiboxplot(data = emission_reshaped,
-                         response_vars = c("e_CH4", "e_NH3"),
+                         response_vars = "e_NH3_heatmap", "e_NH3",
                          group_var = "analyzer")
 
 q_boxplot <- emiboxplot(data = emission_reshaped,
