@@ -24,26 +24,6 @@ library(viridis)
 library(lme4)
 
 ######## Development of functions #######
-# Function to remove outliers based on IQR
-remove_outliers <- function(df) {
-        # Convert all columns except DATE.TIME to numeric
-        df[ , -which(names(df) == "DATE.TIME")] <- lapply(df[ , -which(names(df) == "DATE.TIME")], function(x) as.numeric(as.character(x)))
-        
-        # Identify numeric columns
-        num_cols <- sapply(df, is.numeric)
-        
-        # Replace outliers with NA
-        df[num_cols] <- lapply(df[num_cols], function(x) {
-                Q1 <- quantile(x, 0.25, na.rm = TRUE)
-                Q3 <- quantile(x, 0.75, na.rm = TRUE)
-                IQR <- Q3 - Q1
-                x[x < (Q1 - 1.5*IQR) | x > (Q3 + 1.5*IQR)] <- NA
-                return(x)
-        })
-        
-        return(df)
-}
-
 # Development of indirect.CO2.balance function
 indirect.CO2.balance <- function(df) {
         library(dplyr)
@@ -208,36 +188,22 @@ relerror <- function(df) {
 }
 
 # Development of function stat_table
-stat_table <- function(data, response_vars, group_vars = NULL, var_type_filter = NULL, time_group = c("hour", "day")) {
+stat_table <- function(data, response_vars, group_vars = NULL) {
         require(dplyr)
         require(lubridate)
         require(DescTools)
         
-        time_group <- match.arg(time_group)
-        
         df <- data
-        
-        # Filter by var_type if provided
-        if (!is.null(var_type_filter)) {
-                df <- df %>% filter(var_type %in% var_type_filter)
-        }
         
         # Keep only desired variables
         df <- df %>% filter(var %in% response_vars)
         
-        # Create time grouping column
-        df <- df %>%
-                mutate(
-                        time_grp = if (time_group == "hour") {
-                                lubridate::hour(DATE.TIME)
-                        } else {
-                                as.Date(DATE.TIME)
-                        }
-                )
+        # Create hour grouping column
+        df <- df %>% mutate(hour = lubridate::hour(DATE.TIME))
         
         # Group and summarise
         summary_df <- df %>%
-                group_by(across(all_of(c("time_grp", group_vars))), var) %>%
+                group_by(across(all_of(c("hour", group_vars))), var) %>%
                 summarise(
                         n    = n(),
                         mean = round(mean(value, na.rm = TRUE), 2),
@@ -247,10 +213,6 @@ stat_table <- function(data, response_vars, group_vars = NULL, var_type_filter =
                         max  = round(max(value, na.rm = TRUE), 2),
                         .groups = "drop"
                 )
-        
-        # Rename the time column based on time_group
-        time_col_name <- if (time_group == "hour") "hour" else "day"
-        summary_df <- summary_df %>% rename(!!time_col_name := time_grp)
         
         return(summary_df)
 }
@@ -339,7 +301,7 @@ emiconplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
                 "NH3_mgm3"     = "c[NH3]~'(mg '*m^-3*')'",
                 "r_CH4/CO2"    = "c[CH4]/c[CO2]~'('*'%'*')'",
                 "r_NH3/CO2"    = "c[NH3]/c[CO2]~'('*'%'*')'",
-                "Q_vent"       = "'Q Ventilation rate'~' ('*m^3*' h^-1)'",
+                "Q_vent"       = "Q Ventilation rate " ~ "(" *m^3* " " *h^-1* ")",
                 "e_CH4_g_h"    = "e[CH4]~'(g '*h^-1*')'",
                 "e_NH3_g_h"    = "e[NH3]~'(g '*h^-1*')'",
                 "e_CH4_kg_yr"  = "e[CH4]~'(kg '*yr^-1*')'",
@@ -626,22 +588,19 @@ emiheatmap <- function(stat_df, y = NULL, group_var = "analyzer", time_group = c
 
 ######## Import Data #########
 # Read all gas data
-ATB_FTIR <- read.csv("20250408-15_ATB_wide_FTIR.1.csv")
-LUFA_FTIR <- read.csv("20250408-15_LUFA_wide_FTIR.2.csv")
-MBBM_FTIR <- read.csv("20250408-15_MBBM_wide_FTIR.4.csv")
-ANECO_FTIR <- read.csv("20250408-15_ANECO_wide_FTIR.4.csv")
-ATB_CRDS <- read.csv("20250408-15_ATB_wide_CRDS.1.csv")
-UB_CRDS <- read.csv("20250408-15_UB_wide_CRDS.2.csv")
-LUFA_CRDS <- read.csv("20250408-15_LUFA_wide_CRDS.3.csv")
+ATB_FTIR <- read.csv("20250408-14_ATB_wide_FTIR.1.csv")
 
-# Apply to each dataset
-ATB_FTIR_clean <- remove_outliers(ATB_FTIR)
-LUFA_FTIR_clean <- remove_outliers(LUFA_FTIR)
-MBBM_FTIR_clean <- remove_outliers(MBBM_FTIR)
-ANECO_FTIR_clean <- remove_outliers(ANECO_FTIR)
-ATB_CRDS_clean <- remove_outliers(ATB_CRDS)
-UB_CRDS_clean <- remove_outliers(UB_CRDS)
-LUFA_CRDS_clean <- remove_outliers(LUFA_CRDS)
+LUFA_FTIR <- read.csv("20250408-14_LUFA_wide_FTIR.2.csv")
+
+MBBM_FTIR <- read.csv("20250408-14_MBBM_wide_FTIR.4.csv")
+
+ANECO_FTIR <- read.csv("20250408-14_ANECO_wide_FTIR.4.csv")
+
+ATB_CRDS <- read.csv("20250408-14_ATB_wide_CRDS.1.csv")
+
+UB_CRDS <- read.csv("20250408-14_UB_wide_CRDS.2.csv")
+
+LUFA_CRDS <- read.csv("20250408-14_LUFA_wide_CRDS.3.csv")
 
 # Time period
 start_time <- "2025-04-08 12:00:00"
@@ -649,20 +608,23 @@ end_time   <- "2025-04-14 12:00:00"
 
 # Combine all data set
 gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS) %>%
-        mutate(DATE.TIME = ymd_hms(DATE.TIME, tz = "UTC")) %>%  # specify correct tz here
-        filter(DATE.TIME >= ymd_hms(start_time, tz = "UTC") &
-                       DATE.TIME <= ymd_hms(end_time, tz = "UTC")) %>%
+        mutate(DATE.TIME = ymd_hms(DATE.TIME)) %>% 
+        filter(DATE.TIME >= ymd_hms(start_time) &
+                       DATE.TIME <= ymd_hms(end_time)) %>%
         select(DATE.TIME, analyzer, everything(), -lab) %>%
         arrange(DATE.TIME) %>% distinct() 
 
-gas_data %>% count(DATE.TIME, analyzer, name = "n_obs") #to check how many observations
-
+# Count non-NA observations per analyzer
+gas_data %>%
+        summarise(across(where(is.numeric), ~ sum(!is.na(.)), .names = "n_nonNA_{.col}"),
+                  .by = analyzer)
+                
 
 # Read animal data and fix time zone
 animal_temp <- read.csv("20250408-15_LVAT_Animal_Temp_data.csv") %>%
-        mutate(DATE.TIME = dmy_hm(DATE.TIME, tz = "UTC")) %>%
-        filter(DATE.TIME >= ymd_hms(start_time, tz = "UTC") &
-                       DATE.TIME <= ymd_hms(end_time, tz = "UTC")) %>%
+        mutate(DATE.TIME = dmy_hm(DATE.TIME)) %>%
+        filter(DATE.TIME >= ymd_hms(start_time) &
+                       DATE.TIME <= ymd_hms(end_time)) %>%
         group_by(DATE.TIME) %>%
         summarise(across(everything(), ~ first(.x)), .groups = "drop")
 
@@ -704,9 +666,16 @@ result_HSD_summary <- HSD_table(data = emission_reshaped)
 write_excel_csv(result_HSD_summary, "result_HSD_summary.csv")
 
 ######## Normailty check ########
-# Filter the gases of interest
+# Example for CO2 values of FTIR.4
+shapiro.test(emission_reshaped %>% 
+                     filter(var == "CO2_mgm3",
+                            analyzer == "FTIR.4",
+                            location == "North background") %>% pull(value))
+
+# Filter gases and location of interest
 gas_subset <- emission_reshaped %>%
-        filter(var %in% c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"))
+        filter(var %in% c("NH3_ppm"),
+               location == "North background")
 
 # Histogram + density plot
 ggplot(gas_subset, aes(x = value)) +
@@ -723,6 +692,7 @@ ggplot(gas_subset, aes(sample = value)) +
         facet_grid(var ~ analyzer, scales = "free") +
         theme_minimal() +
         labs(title = "Q-Q Plot of Gas Measurements")
+
 
  ######## Daily Mean ± SD Trend Plots ########
 # Concentrations only
@@ -744,7 +714,6 @@ c_r_S_mgm3_plot <- emiconplot(
               "r_CH4/CO2", "r_NH3/CO2"),
         location_filter = "South background")
 
-
 # Delta variables only
 delta_N_plot <- emiconplot(
         data = emission_reshaped,
@@ -756,20 +725,21 @@ delta_S_plot <- emiconplot(
         y = c("delta_CO2", "delta_CH4", "delta_NH3"),
         location_filter = "South background")
 
+
 # Ventilation only
 q_vent_N_plot <- emiconplot(
         data = emission_reshaped %>%
                 filter(var == "Q_vent") %>%
-                filter(value >= quantile(value, 0.02, na.rm = TRUE) &
-                               value <= quantile(value, 0.98, na.rm = TRUE)),
+                filter(value >= quantile(value, 0.01, na.rm = TRUE) &
+                               value <= quantile(value, 0.99, na.rm = TRUE)),
         y = c("Q_vent"),
         location_filter = "North background")
 
 q_vent_S_plot <- emiconplot(
         data = emission_reshaped %>%
                 filter(var == "Q_vent") %>%
-                filter(value >= quantile(value, 0.02, na.rm = TRUE) &
-                                value <= quantile(value, 0.98, na.rm = TRUE)),
+                filter(value >= quantile(value, 0.01, na.rm = TRUE) &
+                                value <= quantile(value, 0.99, na.rm = TRUE)),
         y = c("Q_vent"),
         location_filter = "South background")
 
@@ -785,8 +755,8 @@ emission_gph_N_plot <- emiconplot(
                 # Filter NH3 to 0.1–99.9% quantiles
                 emission_reshaped %>%
                         filter(var == "e_NH3_g_h") %>%
-                        filter(value >= quantile(value, 0.001, na.rm = TRUE) &
-                                       value <= quantile(value, 0.999, na.rm = TRUE))),
+                        filter(value >= quantile(value, 0.01, na.rm = TRUE) &
+                                       value <= quantile(value, 0.99, na.rm = TRUE))),
         y = c("e_CH4_g_h", "e_NH3_g_h"),
         location_filter = "North background")
 
@@ -802,11 +772,10 @@ emission_gph_S_plot <- emiconplot(
                 # Filter NH3 to 0.1–99.9% quantiles
                 emission_reshaped %>%
                         filter(var == "e_NH3_g_h") %>%
-                        filter(value >= quantile(value, 0.001, na.rm = TRUE) &
-                                       value <= quantile(value, 0.999, na.rm = TRUE))),
+                        filter(value >= quantile(value, 0.01, na.rm = TRUE) &
+                                       value <= quantile(value, 0.99, na.rm = TRUE))),
         y = c("e_CH4_g_h", "e_NH3_g_h"),
         location_filter = "South background")
-
 
 # Named list of plots (matching new names)
 dailyplots <- list(
@@ -846,50 +815,33 @@ for (plot_name in names(dailyplots)) {
 # Concentration and relative error
 c_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3",
-                          "err_CO2_mgm3", "err_CH4_mgm3", "err_NH3_mgm3"),
-        var_type_filter = c("concentration mgm3", "concentration mgm3 relative error"),
-        group_vars = c("analyzer", "location"),
-        time_group = "hour")
+        response_vars = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
+        group_vars = c("analyzer", "location"))
 
 # Delta concentrations and relative error
 d_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3",
-                          "err_delta_CO2", "err_delta_CH4", "err_delta_NH3"),
-        var_type_filter = c("concentration delta", "concentration delta relative error"),
-        group_vars = c("analyzer", "location"),
-        time_group = "hour")
+        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        group_vars = c("analyzer", "location"))
 
 # Ratio concentrations and relative error
 r_stat_sum <- stat_table(
         data = emission_reshaped,
         response_vars = c("r_CH4_N/CO2", "r_CH4_S/CO2", "r_CH4_in/CH4", "r_CH4_in/CO2",
-                          "r_CO2_in/CO2", "r_NH3_N/CO2", "r_NH3_S/CO2", "r_NH3_in/CO2", "r_NH3_in/NH3",
-                          "err_r_CH4_N/CO2", "err_r_CH4_S/CO2", "err_r_CH4_in/CH4", "err_r_CH4_in/CO2",
-                          "err_r_CO2_in/CO2", "err_r_NH3_N/CO2", "err_r_NH3_S/CO2", "err_r_NH3_in/CO2", 
-                          "err_r_NH3_in/NH3"),
-        var_type_filter = c("concentration ratio percentage", "concentration ratio percentage relative error"),
-        group_vars = c("analyzer", "location"),
-        time_group = "hour")
+                          "r_CO2_in/CO2", "r_NH3_N/CO2", "r_NH3_S/CO2", "r_NH3_in/CO2", "r_NH3_in/NH3"),
+        group_vars = c("analyzer", "location"))
 
 # Ventilation rates and error
 q_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("Q_vent", "err_Q_vent"),
-        var_type_filter = c("ventilation rate", "ventilation rate error"),
-        group_vars = c("analyzer", "location"),
-        time_group = "hour")
+        response_vars = c("Q_vent"),
+        group_vars = c("analyzer", "location"))
 
 # Emissions per hour / year and relative error
 e_stat_sum <- stat_table(
         data = emission_reshaped,
-        response_vars = c("e_CH4_g_h", "e_CH4_kg_yr", "e_NH3_g_h", "e_NH3_kg_yr",
-                          "err_e_CH4_g_h", "err_e_CH4_kg_yr", "err_e_NH3_g_h", "err_e_NH3_kg_yr"),
-        var_type_filter = c("emission gram per hour", "emission per year",
-                            "emission per hour relative error", "emission per year relative error"),
-        group_vars = c("analyzer", "location"),
-        time_group = "hour")
+        response_vars = c("e_CH4_g_h", "e_CH4_kg_yr", "e_NH3_g_h", "e_NH3_kg_yr"),
+        group_vars = c("analyzer", "location"))
 
 
 # write csv
@@ -906,37 +858,21 @@ for(name in names(stats_list)){
 }
 
 ########## Heat maps (CV) #############
-min(q_stat_sum$cv[
-        q_stat_sum$var == "Q_vent" & 
-                q_stat_sum$location == "North background" & 
-                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
+q_heatmap <- emiheatmap(
+        q_stat_sum %>% filter(!analyzer %in% c("FTIR.4", "baseline")),
+        y = "Q_vent",
+        time_group = "hour")
 
-max(q_stat_sum$cv[
-        q_stat_sum$var == "Q_vent" & 
-                q_stat_sum$location == "North background" & 
-                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
+e_CH4_heatmap <- emiheatmap(
+        e_stat_sum %>% filter(!analyzer %in% c("FTIR.4", "baseline")),
+        y = "e_CH4_g_h",
+        time_group = "hour")
 
-min(q_stat_sum$cv[
-        q_stat_sum$var == "Q_vent" & 
-                q_stat_sum$location == "South background" & 
-                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
+e_NH3_heatmap <- emiheatmap(
+        e_stat_sum %>% filter(!analyzer %in% c("FTIR.4", "baseline")),
+        y = "e_NH3_g_h",
+        time_group = "hour")
 
-max(q_stat_sum$cv[
-        q_stat_sum$var == "Q_vent" & 
-                q_stat_sum$location == "South background" & 
-                q_stat_sum$analyzer != "FTIR.4"], na.rm = TRUE)
-
-q_heatmap <- emiheatmap(q_stat_sum %>% filter(analyzer != "FTIR.4"),
-                        y = "Q_vent",
-                        time_group = "hour")
-
-e_CH4_heatmap <- emiheatmap(e_stat_sum %>% filter(analyzer != "FTIR.4"),
-                       y = "e_CH4_g_h",
-                       time_group = "hour")
-
-e_NH3_heatmap <- emiheatmap(e_stat_sum %>% filter(analyzer != "FTIR.4"),
-                            y = "e_NH3_g_h",
-                            time_group = "hour")
 
 # Named list of plots
 dailyplots <- list(
@@ -977,7 +913,7 @@ e_NH3_boxplot <- emiboxplot(
 
 
 # Save e_boxplot
-ggsave(filename = "q_e_boxplot.pdf",
+ggsave(filename = "q_boxplot.pdf",
        plot = q_e_boxplot,
        width = 10.5, height = 8.5, dpi = 300)
 
