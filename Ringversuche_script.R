@@ -123,8 +123,8 @@ indirect.CO2.balance <- function(df) {
         return(df)
 }
         
-# Development of ratio and relative error calculator function
-relerror <- function(df) {
+# Development of pivot longer function function
+reshaper <- function(df) {
         library(dplyr)
         library(tidyr)
         library(stringr)
@@ -137,41 +137,13 @@ relerror <- function(df) {
                 select(where(is.numeric)) %>%
                 names()
         
-        # Step 1: Calculate baseline per DATE.TIME
-        baseline <- df %>%
-                group_by(DATE.TIME) %>%
-                summarise(across(all_of(measure_cols), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
-                mutate(analyzer = "baseline") %>%
-                select(names(df))
-        
-        # Step 2: Combine baseline with original data
-        combined <- bind_rows(df, baseline)
-        
-        # Step 3: Calculate relative errors
-        combined <- combined %>%
-                group_by(DATE.TIME) %>%
-                mutate(across(all_of(measure_cols),
-                              .fns = list(err = ~ 100 * (.x - mean(.x[analyzer == "baseline"], na.rm = TRUE)) /
-                                                  mean(.x[analyzer == "baseline"], na.rm = TRUE)),
-                              .names = "err_{.col}")) %>%
-                ungroup()
-        
-        # Step 4: Pivot to long format
-        err_cols <- paste0("err_", measure_cols)
-        
-        df_long <- combined %>%
+        # Pivot to long format
+        df_long <- df %>%
                 pivot_longer(
                         cols = all_of(measure_cols),
                         names_to = "var",
                         values_to = "value"
                 ) %>%
-                pivot_longer(
-                        cols = all_of(err_cols),
-                        names_to = "err_var",
-                        values_to = "err"
-                ) %>%
-                filter(str_remove(err_var, "^err_") == var) %>%
-                select(-err_var) %>%
                 mutate(
                         location = case_when(
                                 str_detect(var, "_in$") ~ "Barn inside",
@@ -181,40 +153,48 @@ relerror <- function(df) {
                         ),
                         var = str_remove(var, "_(in|N|S)$")
                 ) %>%
-                select(DATE.TIME, location, analyzer, var, value, err) %>%
+                select(DATE.TIME, location, analyzer, var, value) %>%
                 arrange(DATE.TIME, var, analyzer, location)
         
         return(df_long)
 }
 
-# Development of function stat_table
-stat_table <- function(data, response_vars, group_vars = NULL) {
-        require(dplyr)
-        require(lubridate)
-        require(DescTools)
+# Development of function stat_table to calculate baseline, mean, sd, vd, and errors
+stat_error_table <- function(df_long) {
+        library(dplyr)
+        library(DescTools)
         
-        df <- data
-        
-        # Keep only desired variables
-        df <- df %>% filter(var %in% response_vars)
-        
-        # Create hour grouping column
-        df <- df %>% mutate(hour = lubridate::hour(DATE.TIME))
-        
-        # Group and summarise
-        summary_df <- df %>%
-                group_by(across(all_of(c("hour", group_vars))), var) %>%
+        # Step 1: calculate baseline per DATE.TIME, location, var
+        baseline_df <- df_long %>%
+                group_by(DATE.TIME, location, var) %>%
                 summarise(
-                        n    = n(),
-                        mean = round(mean(value, na.rm = TRUE), 2),
-                        sd   = round(sd(value, na.rm = TRUE), 2),
-                        cv   = round(DescTools::CoefVar(value, na.rm = TRUE) * 100, 2),
-                        min  = round(min(value, na.rm = TRUE), 2),
-                        max  = round(max(value, na.rm = TRUE), 2),
+                        value = mean(value, na.rm = TRUE),
+                        sd_analyzers = sd(value, na.rm = TRUE),                        # SD of analyzers
+                        cv_analyzers = DescTools::CoefVar(value, na.rm = TRUE) * 100,  # CV of analyzers
                         .groups = "drop"
-                )
+                ) %>%
+                mutate(analyzer = "baseline")
         
-        return(summary_df)
+        # Step 2: combine baseline with original analyzers
+        df <- bind_rows(df_long, baseline_df %>% select(DATE.TIME, location, var, value, analyzer))
+        
+        # Step 3: calculate SD, CV, and relative error per DATE.TIME, location, var
+        stats_df <- df %>%
+                group_by(DATE.TIME, location, var) %>%
+                mutate(
+                        # SD and CV among actual analyzers only (exclude baseline)
+                        sd  = sd(value[analyzer != "baseline"], na.rm = TRUE),
+                        cv  = DescTools::CoefVar(value[analyzer != "baseline"], na.rm = TRUE) * 100,
+                        # fill SD/CV for baseline row with analyzers' SD/CV
+                        sd  = ifelse(analyzer == "baseline", sd[analyzer != "baseline"][1], sd),
+                        cv  = ifelse(analyzer == "baseline", cv[analyzer != "baseline"][1], cv),
+                        # relative error compared to baseline
+                        err = 100 * (value - value[analyzer == "baseline"][1]) / value[analyzer == "baseline"][1]
+                ) %>%
+                ungroup() %>%
+                arrange(DATE.TIME, location, var, analyzer)
+        
+        return(stats_df)
 }
 
 # Development of function HSD_table
@@ -788,11 +768,14 @@ emission_result <- emission_result %>% select(-hour, -m_weight, -p_pregnancy_day
 write_excel_csv(emission_result, "20250408-15_ringversuche_emission_result.csv")
 
 ######## Reshape the data #########
-emission_reshaped <-  relerror(emission_result) %>%
+emission_reshaped <-  reshaper(emission_result) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2))) 
 
 # Write csv
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
+
+######## Calculate Statistical Summary (mean, SD and CV) #########
+emission_stats <- stat_error_table(emission_reshaped)
 
 ######## ANOVA and HSD Summary ########
 result_HSD_summary <- HSD_table(data = emission_reshaped)
@@ -802,7 +785,7 @@ write_excel_csv(result_HSD_summary, "result_HSD_summary.csv")
 ######## Daily Mean ± SD Trend Plots ########
 # Concentrations only
 c_r_in_mgm3_plot <- emiconplot(
-        data = emission_reshaped,
+        data = emission_stats,
         y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3", 
               "r_CH4/CO2", "r_NH3/CO2"),
         location_filter = "Barn inside")
@@ -959,52 +942,6 @@ for (plot_name in names(dailyplots)) {
                 height = size[2],
                 dpi = 300
         )
-}
-
-######## Calculate Statistical Summary (mean, SD and CV) #########
-# Concentration and relative error
-c_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
-        group_vars = c("analyzer", "location"))
-
-# Delta concentrations and relative error
-d_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
-        group_vars = c("analyzer", "location"))
-
-# Ratio concentrations and relative error
-r_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("r_CH4_N/CO2", "r_CH4_S/CO2", "r_CH4_in/CH4", "r_CH4_in/CO2",
-                          "r_CO2_in/CO2", "r_NH3_N/CO2", "r_NH3_S/CO2", "r_NH3_in/CO2", "r_NH3_in/NH3"),
-        group_vars = c("analyzer", "location"))
-
-# Ventilation rates and error
-q_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("Q_vent"),
-        group_vars = c("analyzer", "location"))
-
-# Emissions per hour / year and relative error
-e_stat_sum <- stat_table(
-        data = emission_reshaped,
-        response_vars = c("e_CH4_g_h", "e_CH4_kg_yr", "e_NH3_g_h", "e_NH3_kg_yr"),
-        group_vars = c("analyzer", "location"))
-
-
-# write csv
-stats_list <- list(
-        concentration = c_stat_sum,
-        delta_concentration = d_stat_sum,
-        ratio_concentration = r_stat_sum,
-        ventilation = q_stat_sum,
-        emission = e_stat_sum
-)
-
-for(name in names(stats_list)){
-        write_excel_csv(stats_list[[name]], paste0("statistical_summary_", name, "_day.csv"))
 }
 
 ######## Correlograms #######
