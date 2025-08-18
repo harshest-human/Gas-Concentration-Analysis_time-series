@@ -705,6 +705,90 @@ emiheatmap <- function(stat_df, vars = NULL) {
         return(p)
 }
 
+# Development of Linear mixed model function
+linear_mixed_model <- function(var_name, data) {
+        library(lme4)
+        library(broom.mixed)
+        library(dplyr)
+        library(stringr)
+        library(ggplot2)
+        
+        # Ensure day column exists and is factor
+        data <- data %>%
+                mutate(day = factor(as.Date(DATE.TIME)))
+        
+        # Detect location from variable name
+        if (str_detect(var_name, "_in$")) {
+                location <- "in"
+        } else if (str_detect(var_name, "_N$")) {
+                location <- "N"
+        } else if (str_detect(var_name, "_S$")) {
+                location <- "S"
+        } else {
+                stop("Cannot detect location from variable name. Use _in, _N, or _S.")
+        }
+        
+        # Predictors
+        temp_var <- ifelse(location == "in", "temp_in", "temp_N")
+        rh_var   <- ifelse(location == "in", "RH_in", "RH_N")
+        cows_var <- "n_dairycows_in"
+        wd_var <- ifelse(location %in% c("N","S"), "wd_mst_S", NULL)
+        ws_var <- ifelse(location %in% c("N","S"), "ws_mst_S", NULL)
+        
+        predictors <- c(temp_var, rh_var, wd_var, ws_var, cows_var)
+        predictors <- predictors[predictors %in% colnames(data)]
+        
+        formula <- as.formula(
+                paste(var_name, "~", paste(predictors, collapse = " + "), "+ (1 | analyzer) + (1 | day)")
+        )
+        
+        # Fit the model
+        model <- lmer(formula, data = data, REML = TRUE)
+        
+        # Fixed effects tibble
+        fixed_tbl <- broom.mixed::tidy(model, effects = "fixed")
+        
+        # Random effects
+        ranefs <- ranef(model)
+        analyzer_effects <- ranefs$analyzer %>%
+                mutate(analyzer = rownames(.)) %>%
+                rename(intercept_adj = `(Intercept)`) %>%
+                mutate(percent_dev = 100 * intercept_adj / mean(fixed_tbl$estimate[fixed_tbl$term=="(Intercept)"]))
+        
+        day_effects <- ranefs$day %>%
+                mutate(day = rownames(.)) %>%
+                rename(intercept_adj = `(Intercept)`) %>%
+                mutate(percent_dev = 100 * intercept_adj / mean(fixed_tbl$estimate[fixed_tbl$term=="(Intercept)"]))
+        
+        # Print results
+        cat("\nFixed Effects:\n")
+        print(fixed_tbl)
+        cat("\nRandom Effects - Analyzer:\n")
+        print(analyzer_effects)
+        cat("\nRandom Effects - Day:\n")
+        print(day_effects)
+        
+        # Heatmap for analyzer deviations
+        heatmap_data <- analyzer_effects %>%
+                left_join(day_effects, by = character()) %>%
+                select(analyzer, day, percent_dev = percent_dev.y)
+        
+        ggplot(heatmap_data, aes(x = day, y = analyzer, fill = percent_dev)) +
+                geom_tile(color = "black") +
+                scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+                labs(title = paste("Analyzer Deviation (%) for", var_name), x = "Day", y = "Analyzer") +
+                theme_classic() +
+                theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+        
+        invisible(list(
+                formula = formula,
+                model_summary = summary(model),
+                fixed_effects = fixed_tbl,
+                random_effects_analyzer = analyzer_effects,
+                random_effects_day = day_effects
+        ))
+}
+
 ######## Import Data #########
 # Read all gas data
 ATB_FTIR <- read.csv("20250408-14_ATB_wide_FTIR.1.csv")
@@ -1062,42 +1146,43 @@ q_e_cv_barplot <- emibarplot(emission_stats,
 ggsave("q_e_cv_barplot.pdf", q_e_cv_barplot, width = 10, height = 6, dpi = 300)
 
 ######## Linear mix modelling ##########
-#Data processing
-env_anm_data <- T_RH_HOBO %>%
-        mutate(
-                # Combine date and time as character string
-                datetime_str = paste(date, time),
-                # Parse using strptime with explicit format
-                DATE.TIME = as.POSIXct(strptime(datetime_str, format = "%d/%m/%y %H:%M:%S")),
-                # Floor to hour
-                DATE.TIME = floor_date(DATE.TIME, "hour")
-        ) %>%
-        group_by(DATE.TIME) %>%
-        summarise(
-                T_outside = mean(T_outside, na.rm = TRUE),
-                RH_out = mean(RH_out, na.rm = TRUE),
-                T_inside = mean(T_inside, na.rm = TRUE),
-                RH_inside = mean(RH_inside, na.rm = TRUE),
-                .groups = "drop"
-        )
+colnames(emission_result)
 
-library(lme4)
+#emission_result <- emission_result %>% filter( analyzer != "FTIR.4")
 
-# Fit the model
-q_model <- lmer(value ~ 1 + (1 | analyzer), data = emission_stats %>% filter(variable == "Q_Vent_rate"))
+# Delta CH4 North
+linear_mixed_model("delta_CH4_N", emission_result)
 
-# Extract variance components
-var_comp <- as.data.frame(VarCorr(q_model))
+# Delta CO2 North
+linear_mixed_model("delta_CO2_N", emission_result)
 
-# Between-analyzer variance
-sigma_R2 <- var_comp$vcov[var_comp$grp == "analyzer"]
+# Delta NH3 North
+linear_mixed_model("delta_NH3_N", emission_result)
 
-# Within-analyzer variance (residual)
-sigma_r2 <- var_comp$vcov[var_comp$grp == "Residual"]
+# Delta CH4 South
+linear_mixed_model("delta_CH4_S", emission_result)
 
-# Calculate ICC
-icc <- sigma_R2 / (sigma_R2 + sigma_r2)
+# Delta CO2 South
+linear_mixed_model("delta_CO2_S", emission_result)
 
-cat("Between-analyzer variance (sigma_R^2):", sigma_R2, "\n")
-cat("Within-analyzer variance (sigma_r^2):", sigma_r2, "\n")
-cat("Intraclass correlation coefficient (ICC):", round(icc, 3), "\n")
+# Delta NH3 South
+linear_mixed_model("delta_NH3_S", emission_result)
+
+# Q_vent emission rate North
+linear_mixed_model("Q_vent_N", emission_result)
+
+# Q_vent emission rate South
+linear_mixed_model("Q_vent_S", emission_result)
+
+# NH3 emission rate North
+linear_mixed_model("e_NH3_g_h_N", emission_result)
+
+# NH3 emission rate South
+linear_mixed_model("e_NH3_g_h_S", emission_result)
+
+# CH4 emission rate North
+linear_mixed_model("e_CH4_g_h_N", emission_result)
+
+# CH4 emission rate South
+linear_mixed_model("e_CH4_g_h_S", emission_result)
+
