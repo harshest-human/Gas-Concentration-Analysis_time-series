@@ -170,32 +170,25 @@ stat_error_table <- function(df_long) {
                 group_by(DATE.TIME, location, var) %>%
                 summarise(
                         value = mean(value, na.rm = TRUE),
-                        sd_analyzers = sd(value, na.rm = TRUE),                        # SD of analyzers
-                        cv_analyzers = DescTools::CoefVar(value, na.rm = TRUE) * 100,  # CV of analyzers
+                        sd = sd(value, na.rm = TRUE),                        # SD of analyzers
+                        cv = DescTools::CoefVar(value, na.rm = TRUE) * 100, # CV of analyzers
                         .groups = "drop"
                 ) %>%
                 mutate(analyzer = "baseline")
         
         # Step 2: keep all analyzers (including FTIR.4), then add baseline
-        df <- bind_rows(df_long, baseline_df %>% select(DATE.TIME, location, var, value, analyzer))
+        df <- bind_rows(df_long, baseline_df %>% select(DATE.TIME, location, var, value, analyzer, sd, cv))
         
-        # Step 3: calculate SD, CV, and relative error per DATE.TIME, location, var
+        # Step 3: calculate relative error and assign SD/CV only for baseline
         stats_df <- df %>%
                 group_by(DATE.TIME, location, var) %>%
                 mutate(
-                        # SD and CV among actual analyzers only (exclude baseline + FTIR.4)
-                        sd_calc = sd(value[!(analyzer %in% c("baseline", "FTIR.4"))], na.rm = TRUE),
-                        cv_calc = DescTools::CoefVar(value[!(analyzer %in% c("baseline", "FTIR.4"))], na.rm = TRUE) * 100,
-                        
-                        # assign SD and CV
-                        sd = ifelse(analyzer == "baseline", sd_calc, 
-                                    ifelse(analyzer == "FTIR.4", NA, sd_calc)),
-                        cv = ifelse(analyzer == "baseline", cv_calc, 
-                                    ifelse(analyzer == "FTIR.4", NA, cv_calc)),
-                        
                         # relative error compared to baseline (only for non-baseline)
                         err = ifelse(analyzer == "baseline", NA,
-                                     100 * (value - value[analyzer == "baseline"][1]) / value[analyzer == "baseline"][1])
+                                     100 * (value - value[analyzer == "baseline"][1]) / value[analyzer == "baseline"][1]),
+                        # keep sd and cv only for baseline, compute dynamically for baseline
+                        sd = ifelse(analyzer == "baseline", sd(value[!(analyzer %in% c("FTIR.4", "baseline"))], na.rm = TRUE), NA),
+                        cv = ifelse(analyzer == "baseline", DescTools::CoefVar(value[!(analyzer %in% c("FTIR.4", "baseline"))], na.rm = TRUE) * 100, NA)
                 ) %>%
                 ungroup() %>%
                 arrange(DATE.TIME, location, var, analyzer)
@@ -632,7 +625,7 @@ emibarplot <- function(data, x = "hour", var_selected = NULL) {
                            aes(x = .data[[x]], y = cv), 
                            color = "black", size = 0.5, position = position_jitter(width = 0.1)) +
                 facet_grid(variable ~ location, scales = "free_y", switch = "y") +
-                scale_fill_manual(name = "Analyzer", values = c("baseline" = "grey")) +
+                scale_fill_manual(name = NULL, values = c("baseline" = "grey")) +
                 theme_classic() +
                 theme(
                         axis.text.x = if (x == "day") element_text(angle = 45, hjust = 1, size = 12) else element_text(size = 12),
@@ -642,7 +635,6 @@ emibarplot <- function(data, x = "hour", var_selected = NULL) {
                         panel.border = element_rect(colour = "black", fill = NA),
                         axis.ticks.length = unit(0.2, "cm"),
                         legend.position = "bottom",
-                        legend.title = element_text(size = 12),
                         legend.text = element_text(size = 12)
                 ) +
                 scale_y_continuous(breaks = pretty_breaks(n = 10)) +
@@ -952,17 +944,17 @@ dailyplots <- list(
 # Corresponding size settings (width, height)
 plot_sizes <- list(
         # Concentrations
-        c_r_in_mgm3_plot = c(17, 8.5),
-        c_r_N_mgm3_plot  = c(17, 8.5),
-        c_r_S_mgm3_plot  = c(17, 8.5),
+        c_r_in_mgm3_plot = c(12, 10.5),
+        c_r_N_mgm3_plot  = c(12, 10.5),
+        c_r_S_mgm3_plot  = c(12, 10.5),
         
         # Delta
         delta_N_plot = c(12, 8.5),
         delta_S_plot = c(12, 8.5),
         
         # Ventilation
-        q_vent_N_plot = c(12, 4),
-        q_vent_S_plot = c(12, 4),
+        q_vent_N_plot = c(10, 4),
+        q_vent_S_plot = c(10, 4),
         
         # Emissions
         emission_gph_N_plot = c(14, 6.5),
@@ -1007,8 +999,29 @@ e_NH3_S_corrgram <- emicorrgram(emission_stats %>% filter(analyzer != "baseline"
                                 target_variable = "e_NH3_kg_yr", 
                                 locations = "South background")
 
+# Create a named list of all correlation plots
+corr_plots <- list(
+        q_N = q_N_corrgram,
+        q_S = q_S_corrgram,
+        e_CH4_N = e_CH4_N_corrgram,
+        e_CH4_S = e_CH4_S_corrgram,
+        e_NH3_N = e_NH3_N_corrgram,
+        e_NH3_S = e_NH3_S_corrgram
+)
 
-######## Box plots (HSD) ventilation and emission rates ##############
+# Loop through the list and save each plot
+for (name in names(corr_plots)) {
+        ggsave(
+                filename = paste0(name, "_corrgram.pdf"),
+                plot = corr_plots[[name]],
+                width = 6,
+                height = 6,
+                dpi = 300
+        )
+}
+
+
+######## Box plots ventilation and emission rates ##############
 q_e_hour_boxplot <- emiboxplot( 
         data = emission_stats  %>% filter(!analyzer %in% "baseline"),
         x = "hour",
@@ -1018,19 +1031,19 @@ q_e_hour_boxplot <- emiboxplot(
 q_e_day_boxplot <- emiboxplot( 
         data = emission_stats  %>% filter(!analyzer %in% "baseline"),
         x = "day",
-        y = c("Q_vent", "e_CH4_g_h", "e_NH3_g_h"),
+        y = c("Q_vent", "e_CH4_kg_yr", "e_NH3_kg_yr"),
         group_var = "analyzer")
 
 # Save boxplot
 ggsave(filename = "q_e_hour_boxplot.pdf",
        plot = q_e_hour_boxplot,
-       width = 10.5,
+       width = 17.5,
        height = 8.5,
        dpi = 300)
 
 ggsave(filename = "q_e_day_boxplot.pdf",
        plot = q_e_day_boxplot,
-       width = 10.5,
+       width = 12.5,
        height = 8.5,
        dpi = 300)
 
@@ -1047,13 +1060,6 @@ q_e_cv_barplot <- emibarplot(emission_stats,
                                  var = c("Q_vent", "e_CH4_kg_yr", "e_NH3_kg_yr"))
 
 ggsave("q_e_cv_barplot.pdf", q_e_cv_barplot, width = 10, height = 6, dpi = 300)
-
-
-######## Heatmaps #####
-# Hourly 
-emiheatmap(stat_df = emission_stats, vars = c("Q_vent", "e_CH4_kg_yr", "e_NH3_kg_yr"))
-        
-
 
 ######## Linear mix modelling ##########
 #Data processing
