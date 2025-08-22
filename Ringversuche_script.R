@@ -89,16 +89,16 @@ indirect.CO2.balance <- function(df) {
                         Q_vent_S = ifelse(delta_CO2_S != 0, PCO2 / delta_CO2_S, NA_real_),
                         
                         # Instantaneous emissions (g/h) divided by 1000 to convert mg to g
-                        e_NH3_g_h_N = (delta_NH3_N * Q_vent_N / 1000) * n_dairycows_in, 
-                        e_CH4_g_h_N = (delta_CH4_N * Q_vent_N / 1000) * n_dairycows_in,
-                        e_NH3_g_h_S = (delta_NH3_S * Q_vent_S / 1000) * n_dairycows_in,
-                        e_CH4_g_h_S = (delta_CH4_S * Q_vent_S / 1000) * n_dairycows_in,
+                        e_NH3_gh_N = (delta_NH3_N * Q_vent_N / 1000) * n_dairycows_in, 
+                        e_CH4_gh_N = (delta_CH4_N * Q_vent_N / 1000) * n_dairycows_in,
+                        e_NH3_gh_S = (delta_NH3_S * Q_vent_S / 1000) * n_dairycows_in,
+                        e_CH4_gh_S = (delta_CH4_S * Q_vent_S / 1000) * n_dairycows_in,
                         
                         # Annual emissions (kg/year) divided by 1000 to convert g to kg
-                        e_NH3_kg_yr_N = e_NH3_g_h_N * 24 * 365 / 1000,
-                        e_CH4_kg_yr_N = e_CH4_g_h_N * 24 * 365 / 1000,
-                        e_NH3_kg_yr_S = e_NH3_g_h_S * 24 * 365 / 1000,
-                        e_CH4_kg_yr_S = e_CH4_g_h_S * 24 * 365 / 1000
+                        e_NH3_ghLU_N = (e_NH3_gh_N * 500) / (n_dairycows_in * m_weight),
+                        e_CH4_ghLU_N = (e_CH4_gh_N * 500) / (n_dairycows_in * m_weight),
+                        e_NH3_ghLU_S = (e_NH3_gh_S * 500) / (n_dairycows_in * m_weight),
+                        e_CH4_ghLU_S = (e_CH4_gh_S * 500) / (n_dairycows_in * m_weight)
                 )
         
         # Calculate CH4/CO2 and NH3/CO2 ratios (in %)
@@ -306,11 +306,11 @@ emiconplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE,
                 "delta_CO2"    = "Delta*c[CO2]~'(mg '*m^-3*')'",
                 "delta_CH4"    = "Delta*c[CH4]~'(mg '*m^-3*')'",
                 "delta_NH3"    = "Delta*c[NH3]~'(mg '*m^-3*')'",
-                "Q_vent"      = "Q~Ventilation~rate~'('*m^3~h^-1*')'",
-                "e_CH4_g_h"    = "e[CH4]~'(g '*h^-1*')'",
-                "e_NH3_g_h"    = "e[NH3]~'(g '*h^-1*')'",
-                "e_CH4_kg_yr"  = "e[CH4]~'(kg '*yr^-1*')'",
-                "e_NH3_kg_yr"  = "e[NH3]~'(kg '*yr^-1*')'",
+                "Q_vent"       = "Q~'('*m^3~h^-1~LU^-1*')'",
+                "e_CH4_gh"     = "e[CH4]~'(g '*h^-1*')'",
+                "e_NH3_gh"     = "e[NH3]~'(g '*h^-1*')'",
+                "e_CH4_ghLU"   = "e[CH4]~'(g '*h^-1~LU^-1*')'",
+                "e_NH3_ghLU"   = "e[NH3]~'(g '*h^-1~LU^-1*')'",
                 "temp"         = "Temperature " ~ "(°C)",
                 "RH"           = "Relative Humidity " ~ "(%)",
                 "ws_mst"       = "Wind Speed Mast " ~ "(m " *s^-1* ")",
@@ -482,11 +482,11 @@ emicorrgram <- function(data, target_variable, locations = NULL) {
                 "delta_CO2"    = "Delta*c[CO2]~'(mg '*m^-3*')'",
                 "delta_CH4"    = "Delta*c[CH4]~'(mg '*m^-3*')'",
                 "delta_NH3"    = "Delta*c[NH3]~'(mg '*m^-3*')'",
-                "Q_vent"      = "Q~Ventilation~rate~'('*m^3~h^-1*')'",
-                "e_CH4_g_h"    = "e[CH4]~'(g '*h^-1*')'",
-                "e_NH3_g_h"    = "e[NH3]~'(g '*h^-1*')'",
-                "e_CH4_kg_yr"  = "e[CH4]~'(kg '*yr^-1*')'",
-                "e_NH3_kg_yr"  = "e[NH3]~'(kg '*yr^-1*')'",
+                "Q_vent"       = "Q~'('*m^3~h^-1~LU^-1*')'",
+                "e_CH4_gh"     = "e[CH4]~'(g '*h^-1*')'",
+                "e_NH3_gh"     = "e[NH3]~'(g '*h^-1*')'",
+                "e_CH4_ghLU"   = "e[CH4]~'(g '*h^-1~LU^-1*')'",
+                "e_NH3_ghLU"   = "e[NH3]~'(g '*h^-1~LU^-1*')'",
                 "temp"         = "Temperature " ~ "(°C)",
                 "RH"           = "Relative Humidity " ~ "(%)",
                 "ws_mst"       = "Wind Speed Mast " ~ "(m " *s^-1* ")",
@@ -542,8 +542,6 @@ emicorrgram <- function(data, target_variable, locations = NULL) {
         return(p)
 }
 
-# Development of function cv emiheatmap
-# Development of function cv emiheatmap
 # Development of function cv emiheatmap
 emiheatmap <- function(stat_df, vars = NULL, time.group = "hour", location.filter = NULL) {
         library(dplyr)
@@ -836,7 +834,7 @@ d_q_e_day_N_plot <- emiconplot(
         data = emission_reshaped,
         x = "day",
         y = c("delta_CO2", "delta_CH4", "delta_NH3",
-              "Q_vent", "e_CH4_g_h", "e_NH3_g_h"),
+              "Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
         location_filter = "North background")
 
 # South background
@@ -844,7 +842,7 @@ d_q_e_day_S_plot <- emiconplot(
         data = emission_reshaped,
         x = "day",
         y = c("delta_CO2", "delta_CH4", "delta_NH3",
-              "Q_vent", "e_CH4_g_h", "e_NH3_g_h"),
+              "Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
         location_filter = "South background")
 
 ######## Hourly Mean ± SD Trend Plots ########
@@ -853,7 +851,7 @@ d_q_e_hour_N_plot <- emiconplot(
         data = emission_reshaped,
         x = "hour",
         y = c("delta_CO2", "delta_CH4", "delta_NH3",
-              "Q_vent", "e_CH4_g_h", "e_NH3_g_h"),
+              "Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
         location_filter = "North background")
 
 # South background
@@ -861,7 +859,7 @@ d_q_e_hour_S_plot <- emiconplot(
         data = emission_reshaped,
         x = "hour",
         y = c("delta_CO2", "delta_CH4", "delta_NH3",
-              "Q_vent", "e_CH4_g_h", "e_NH3_g_h"),
+              "Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
         location_filter = "South background")
 
 # Temperature and Relative Humidity 
@@ -914,12 +912,12 @@ q_N_corrgram <- emicorrgram(
 
 e_CH4_N_corrgram <- emicorrgram(
         emission_reshaped,
-        target_variable = "e_CH4_g_h", 
+        target_variable = "e_CH4_ghLU", 
         locations = "North background")
 
 e_NH3_N_corrgram <- emicorrgram(
         emission_reshaped,
-        target_variable = "e_NH3_g_h", 
+        target_variable = "e_NH3_ghLU", 
         locations = "North background")
 
 # South background
@@ -945,12 +943,12 @@ q_S_corrgram <- emicorrgram(
 
 e_CH4_S_corrgram <- emicorrgram(
         emission_reshaped,
-        target_variable = "e_CH4_g_h", 
+        target_variable = "e_CH4_ghLU", 
         locations = "South background")
 
 e_NH3_S_corrgram <- emicorrgram(
         emission_reshaped,
-        target_variable = "e_NH3_g_h", 
+        target_variable = "e_NH3_ghLU", 
         locations = "South background")
 
 
@@ -1084,14 +1082,14 @@ linear_mixed_model("Q_vent_N", emission_result)
 linear_mixed_model("Q_vent_S", emission_result)
 
 # NH3 emission rate North
-linear_mixed_model("e_NH3_g_h_N", emission_result)
+linear_mixed_model("e_NH3_ghLU_N", emission_result)
 
 # NH3 emission rate South
-linear_mixed_model("e_NH3_g_h_S", emission_result)
+linear_mixed_model("e_NH3_ghLU_S", emission_result)
 
 # CH4 emission rate North
-linear_mixed_model("e_CH4_g_h_N", emission_result)
+linear_mixed_model("e_CH4_ghLU_N", emission_result)
 
 # CH4 emission rate South
-linear_mixed_model("e_CH4_g_h_S", emission_result)
+linear_mixed_model("e_CH4_ghLU_S", emission_result)
 
