@@ -53,13 +53,13 @@ indirect.CO2.balance <- function(df) {
                         phi_T_cor = phi * t_factor,
                         
                         # Relative animal activity correction
-                        A_cor = 1 - a * 3 * sin((2*pi/24) * (hour + 6 - h_min)),
+                        A_cor = 1 - a * (sin((2*pi/24) * (hour + 6 - h_min))),
                         
                         # Heat production per cow corrected for T and activity
                         hpu_T_A_cor_per_cow = phi_T_cor * A_cor,
                         
-                        # Total heat production for all animals
-                        hpu_T_A_cor_all = hpu_T_A_cor_per_cow * n_dairycows_in,
+                        #PCO2
+                        PCO2 = (0.185 * hpu_T_A_cor_per_cow) * 1000,
                         
                         # Convert CO2, NH3, CH4 from ppm → mg/m³ (0°C)
                         CO2_mgm3_in = ppm_to_mgm3(CO2_ppm_in, 44.01),
@@ -85,14 +85,14 @@ indirect.CO2.balance <- function(df) {
                         delta_CH4_S = CH4_mgm3_in - CH4_mgm3_S,
                         
                         # Ventilation rate (m³/h)
-                        Q_vent_N = ifelse(delta_CO2_N != 0, hpu_T_A_cor_all / delta_CO2_N, NA_real_),
-                        Q_vent_S = ifelse(delta_CO2_S != 0, hpu_T_A_cor_all / delta_CO2_S, NA_real_),
+                        Q_vent_N = ifelse(delta_CO2_N != 0, PCO2 / delta_CO2_N, NA_real_),
+                        Q_vent_S = ifelse(delta_CO2_S != 0, PCO2 / delta_CO2_S, NA_real_),
                         
                         # Instantaneous emissions (g/h) divided by 1000 to convert mg to g
-                        e_NH3_g_h_N = delta_NH3_N * Q_vent_N / 1000, 
-                        e_CH4_g_h_N = delta_CH4_N * Q_vent_N / 1000,
-                        e_NH3_g_h_S = delta_NH3_S * Q_vent_S / 1000,
-                        e_CH4_g_h_S = delta_CH4_S * Q_vent_S / 1000,
+                        e_NH3_g_h_N = (delta_NH3_N * Q_vent_N / 1000) * n_dairycows_in, 
+                        e_CH4_g_h_N = (delta_CH4_N * Q_vent_N / 1000) * n_dairycows_in,
+                        e_NH3_g_h_S = (delta_NH3_S * Q_vent_S / 1000) * n_dairycows_in,
+                        e_CH4_g_h_S = (delta_CH4_S * Q_vent_S / 1000) * n_dairycows_in,
                         
                         # Annual emissions (kg/year) divided by 1000 to convert g to kg
                         e_NH3_kg_yr_N = e_NH3_g_h_N * 24 * 365 / 1000,
@@ -781,7 +781,7 @@ emission_result <- indirect.CO2.balance(input_combined)
 emission_result <- emission_result %>% select(-hour, -m_weight, -p_pregnancy_day, 
                                               -Y1_milk_prod, -a, -h_min,
                                               -phi, -t_factor, -phi_T_cor, -A_cor,
-                                              -hpu_T_A_cor_per_cow, -hpu_T_A_cor_all)
+                                              -hpu_T_A_cor_per_cow, -PCO2)
 
 # Write csv 
 write_excel_csv(emission_result, "20250408-15_ringversuche_emission_result.csv")
@@ -990,7 +990,7 @@ q_S_hour_heatmap <- emiheatmap(emission_hour_stat,
                                location.filter = "South background")
 
 ####### Save plots as pdf ########
-########## Combine all plots in a named list ##########
+# Combine all plots in a named list 
 all_plots <- list(
         c_r_in_mgm3_plot = c_r_in_mgm3_plot,
         c_r_N_mgm3_plot  = c_r_N_mgm3_plot,
@@ -1015,16 +1015,15 @@ all_plots <- list(
         q_S_hour_heatmap = q_S_hour_heatmap
 )
 
-########## Define custom sizes (width, height) for each plot ##########
-# Use the same plot names as in all_plots
+# Define custom sizes (width, height) for each plot
 plot_sizes <- list(
         c_r_in_mgm3_plot   = c(12, 10.5),
         c_r_N_mgm3_plot    = c(12, 10.5),
         c_r_S_mgm3_plot    = c(12, 10.5),
-        d_q_e_day_N_plot   = c(12, 10.5),
-        d_q_e_day_S_plot   = c(12, 10.5),
-        d_q_e_hour_N_plot  = c(12, 10.5),
-        d_q_e_hour_S_plot  = c(12, 10.5),
+        d_q_e_day_N_plot   = c(10, 12.5),
+        d_q_e_day_S_plot   = c(10, 12.5),
+        d_q_e_hour_N_plot  = c(10, 12.5),
+        d_q_e_hour_S_plot  = c(10, 12.5),
         temp_cows_in_plot  = c(8, 6.5),
         temp_cows_N_plot   = c(8, 4.5),
         weather_N_plot     = c(8, 5.5),
@@ -1041,7 +1040,7 @@ plot_sizes <- list(
         q_S_hour_heatmap   = c(12, 4)
 )
 
-########## Loop through and save each plot with its custom size ##########
+# Loop through and save each plot with its custom size
 for (plot_name in names(all_plots)) {
         size <- plot_sizes[[plot_name]]
         
