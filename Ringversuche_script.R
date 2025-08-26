@@ -123,7 +123,7 @@ indirect.CO2.balance <- function(df) {
         return(df)
 }
         
-# Development of pivot longer function function
+# Development of pivot longer function
 reshaper <- function(df) {
         library(dplyr)
         library(tidyr)
@@ -154,11 +154,36 @@ reshaper <- function(df) {
                         ),
                         var = str_remove(var, "_(in|N|S)$"),
                         DATE.TIME = as.POSIXct(DATE.TIME),
-                        day  = factor(as.Date(DATE.TIME)),           
-                        hour = factor(format(DATE.TIME, "%H:%M"), levels = sprintf("%02d:00", 0:23))
+                        day  = factor(as.Date(DATE.TIME)),
+                        hour = factor(format(DATE.TIME, "%H:%M"), 
+                                      levels = sprintf("%02d:00", 0:23))
                 ) %>%
                 select(DATE.TIME, day, hour, location, analyzer, var, value) %>%
-                arrange(DATE.TIME, var, analyzer, location)
+                arrange(DATE.TIME, var, analyzer, location) %>%
+                # Map special analyzers
+                mutate(analyzer = case_when(
+                        var %in% c("temp", "RH")                           ~ "HOBO",
+                        var %in% c("wd_mst", "ws_mst", "wd_trv", "ws_trv") ~ "USA",
+                        var %in% c("n_dairycows")                          ~ "RGB",
+                        TRUE                                               ~ analyzer
+                ))
+        
+        # ---- Baseline calculation ----
+        baseline_df <- df_long %>%
+                group_by(DATE.TIME, day, hour, location, var) %>%
+                summarise(
+                        value = mean(value, na.rm = TRUE),
+                        .groups = "drop"
+                ) %>%
+                mutate(analyzer = "baseline")
+        
+        # ---- Combine analyzers + baseline ----
+        df_long <- bind_rows(df_long, baseline_df) %>%
+                mutate(analyzer = factor(analyzer,
+                                         levels = c("FTIR.1","FTIR.2","FTIR.3","FTIR.4",
+                                                    "CRDS.1","CRDS.2","CRDS.3",
+                                                    "HOBO","USA","RGB","baseline"))) %>%
+                arrange(DATE.TIME, location, analyzer, var)
         
         return(df_long)
 }
@@ -785,14 +810,9 @@ emission_result <- emission_result %>% select(-hour, -m_weight, -p_pregnancy_day
 write_excel_csv(emission_result, "20250408-15_ringversuche_emission_result.csv")
 
 ######## Reshape and Calculate Statistical Summary (mean, SD and CV) #########
-emission_reshaped <-  reshaper(emission_result) %>%
-        mutate(analyzer = case_when(
-                var %in% c("temp", "RH")                           ~ "HOBO",
-                var %in% c("wd_mst", "ws_mst", "wd_trv", "ws_trv") ~ "USA",
-                var %in% c("n_dairycows")                          ~ "RGB",
-                TRUE                                               ~ analyzer)) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2))) 
-
+emission_reshaped <-  reshaper(emission_result)  %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+        
 # Write csv
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
