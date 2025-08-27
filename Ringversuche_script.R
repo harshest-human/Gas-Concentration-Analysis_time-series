@@ -1157,7 +1157,7 @@ e_NH3_day_summary <- emission_day_stat %>%
 
 
 # Delta gases hourly summary
-delta_hour_summary <- emission_day_stat %>%
+delta_hour_summary <- emission_hour_stat %>%
         filter(analyzer == "baseline",
                var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
         group_by(hour, analyzer, location, var) %>%
@@ -1169,7 +1169,7 @@ delta_hour_summary <- emission_day_stat %>%
         )
 
 # Q ventilation hourly summary
-q_hour_summary <- emission_day_stat %>%
+q_hour_summary <- emission_hour_stat %>%
         filter(analyzer == "baseline",
                var == "Q_vent") %>%
         group_by(hour, analyzer, location, var) %>%
@@ -1181,7 +1181,7 @@ q_hour_summary <- emission_day_stat %>%
         )
 
 # CH4 emission hourly summary
-e_CH4_hour_summary <- emission_day_stat %>%
+e_CH4_hour_summary <- emission_hour_stat %>%
         filter(analyzer == "baseline",
                var == "e_CH4_gh") %>%
         group_by(hour, analyzer, location, var) %>%
