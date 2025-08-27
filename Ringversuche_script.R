@@ -155,8 +155,7 @@ reshaper <- function(df) {
                         var = str_remove(var, "_(in|N|S)$"),
                         DATE.TIME = as.POSIXct(DATE.TIME),
                         day  = factor(as.Date(DATE.TIME)),
-                        hour = factor(format(DATE.TIME, "%H:%M"), 
-                                      levels = sprintf("%02d:00", 0:23))
+                        hour = factor(format(DATE.TIME, "%H:%M"), levels = sprintf("%02d:00", 0:23))
                 ) %>%
                 select(DATE.TIME, day, hour, location, analyzer, var, value) %>%
                 arrange(DATE.TIME, var, analyzer, location) %>%
@@ -183,22 +182,34 @@ reshaper <- function(df) {
                                          levels = c("FTIR.1","FTIR.2","FTIR.3","FTIR.4",
                                                     "CRDS.1","CRDS.2","CRDS.3",
                                                     "HOBO","USA","RGB","baseline"))) %>%
-                arrange(DATE.TIME, location, analyzer, var)
+                arrange(DATE.TIME, location, var)
+        
+        # ---- Compute % error relative to baseline ----
+        df_long <- df_long %>%
+                group_by(DATE.TIME, day, hour, location, var) %>%
+                mutate(
+                        baseline_value = value[analyzer == "baseline"],
+                        pct_err = 100 * (value - baseline_value) / baseline_value
+                ) %>%
+                ungroup() %>%
+                select(-baseline_value) 
         
         return(df_long)
 }
 
 # Development of function stat_table to calculate baseline, mean, sd, and errors 
-stat_error_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
+sd_cv_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
         library(dplyr)
         library(DescTools)
         
         # Ensure day and hour columns exist
-        if (!("day" %in% names(df_long))) df_long <- df_long %>% mutate(day = as.Date(DATE.TIME))
-        if (!("hour" %in% names(df_long))) df_long <- df_long %>% mutate(hour = format(DATE.TIME, "%H"))
+        if (!("day" %in% names(df_long))) 
+                df_long <- df_long %>% mutate(day = as.Date(DATE.TIME))
+        if (!("hour" %in% names(df_long))) 
+                df_long <- df_long %>% mutate(hour = format(DATE.TIME, "%H"))
         
-        # Step 1: calculate mean, sd, cv by time.group, analyzer, location, var
-        agg_df <- df_long %>%
+        # Calculate mean, sd, cv by time.group, analyzer, location, var
+        result_df <- df_long %>%
                 group_by(across(all_of(time.group)), analyzer, location, var) %>%
                 summarise(
                         mean_value = mean(value, na.rm = TRUE),
@@ -207,36 +218,14 @@ stat_error_table <- function(df_long, time.group = "hour", analyzer.levels = NUL
                         .groups = "drop"
                 )
         
-        # Step 2: calculate baseline per time.group, location, var
-        baseline_df <- df_long %>%
-                group_by(across(all_of(time.group)), location, var) %>%
-                summarise(
-                        mean_value = mean(value, na.rm = TRUE),
-                        sd = sd(value, na.rm = TRUE),
-                        cv = DescTools::CoefVar(value, na.rm = TRUE) * 100,
-                        .groups = "drop"
-                ) %>%
-                mutate(analyzer = "baseline", pct_err = NA_real_)
-        
-        # Step 3: join baseline to calculate pct_err for all analyzers
-        result_df <- agg_df %>%
-                left_join(
-                        baseline_df %>% select(all_of(time.group), location, var, baseline_value = mean_value),
-                        by = c(time.group, "location", "var")
-                ) %>%
-                mutate(pct_err = 100 * (mean_value - baseline_value) / baseline_value)
-        
-        # Step 4: bind baseline rows
-        final_df <- bind_rows(result_df, baseline_df)
-        
-        # Step 5: apply analyzer levels and filter if provided
+        # Apply analyzer levels if provided
         if (!is.null(analyzer.levels)) {
-                final_df <- final_df %>%
+                result_df <- result_df %>%
                         mutate(analyzer = factor(analyzer, levels = analyzer.levels)) %>%
                         filter(analyzer %in% analyzer.levels)
         }
         
-        return(final_df %>% arrange(across(all_of(time.group)), location, var, analyzer))
+        return(result_df %>% arrange(across(all_of(time.group)), location, var, analyzer))
 }
 
 # Development of function HSD_table
@@ -595,8 +584,51 @@ emiheatmap <- function(stat_df, vars = NULL, time.group = "hour", location.filte
         # Ensure analyzer is factor for y-axis
         df$analyzer <- factor(df$analyzer, levels = unique(df$analyzer))
         
-        # Automatically set color scale limits
-        cv_max <- ceiling(max(df$cv, na.rm = TRUE) / 10) * 10
+        # Title expressions (same as in emicorrgram)
+        title_labels_expr <- c(
+                "CO2_mgm3"     = "c[CO2]~'(mg '*m^-3*')'",
+                "CH4_mgm3"     = "c[CH4]~'(mg '*m^-3*')'",
+                "NH3_mgm3"     = "c[NH3]~'(mg '*m^-3*')'",
+                "r_CH4/CO2"    = "c[CH4]/c[CO2]~'('*'%'*')'",
+                "r_NH3/CO2"    = "c[NH3]/c[CO2]~'('*'%'*')'",
+                "delta_CO2"    = "Delta*c[CO2]~'(mg '*m^-3*')'",
+                "delta_CH4"    = "Delta*c[CH4]~'(mg '*m^-3*')'",
+                "delta_NH3"    = "Delta*c[NH3]~'(mg '*m^-3*')'",
+                "Q_vent"       = "Q~'('*m^3~h^-1~LU^-1*')'",
+                "e_CH4_gh"     = "e[CH4]~'(g '*h^-1*')'",
+                "e_NH3_gh"     = "e[NH3]~'(g '*h^-1*')'",
+                "e_CH4_ghLU"   = "e[CH4]~'(g '*h^-1~LU^-1*')'",
+                "e_NH3_ghLU"   = "e[NH3]~'(g '*h^-1~LU^-1*')'",
+                "temp"         = "Temperature " ~ "(°C)",
+                "RH"           = "Relative Humidity " ~ "(%)",
+                "ws_mst"       = "Wind Speed Mast " ~ "(m " *s^-1* ")",
+                "wd_mst"       = "Wind Diection Mast " ~ "(°)",
+                "wd_trv"       = "Wind Direction Traverse " ~ "(°)",
+                "ws_trv"       = "Wind Speed Traverse " ~ "(m " *s^-1* ")",
+                "n_dairycows"  = "'Number of Cows'"
+        )
+        
+        # Pick target variable(s) for title
+        target_var <- if (!is.null(vars)) vars[1] else unique(df$var)[1]
+        
+        # Build title label
+        title_label <- if (target_var %in% names(title_labels_expr)) {
+                title_labels_expr[[target_var]]
+        } else {
+                target_var
+        }
+        
+        # Add location info
+        location_name <- if (!is.null(location.filter)) {
+                paste(location.filter, collapse = ", ")
+        } else if ("location" %in% colnames(df)) {
+                paste(unique(df$location), collapse = ", ")
+        } else {
+                ""
+        }
+        
+        # Parse full title expression
+        full_title_expr <- parse(text = paste0(title_label, " ~ '(' ~ '", location_name, "' ~ ')'"))
         
         # Plot heatmap
         p <- ggplot(df, aes_string(x = time.group, y = "analyzer", fill = "cv")) +
@@ -609,17 +641,18 @@ emiheatmap <- function(stat_df, vars = NULL, time.group = "hour", location.filte
                         name = "CV (%)",
                         na.value = "grey80"
                 ) +
-                labs(x = time.group, y = "Analyzer") +
+                labs(x = time.group, y = "Analyzer", title = full_title_expr) +
                 theme_classic() +
                 theme(axis.text.x = element_text(
                         size = 12, 
                         angle = 45, 
                         hjust = 1),
-                        axis.text.y = element_text(size = 12),
-                        panel.grid = element_blank(),
-                        legend.position = "bottom",
-                        legend.key.width = unit(2, "cm"),
-                        panel.border = element_rect(color = "black", fill = NA)
+                      axis.text.y = element_text(size = 12),
+                      panel.grid = element_blank(),
+                      legend.position = "bottom",
+                      legend.key.width = unit(2, "cm"),
+                      panel.border = element_rect(color = "black", fill = NA),
+                      plot.title = element_text(hjust = 0.5)
                 )
         
         print(p)
@@ -849,6 +882,7 @@ c_r_S_mgm3_plot <- emiconplot(
         location_filter = "South background")
 
 ######## Daily Mean ± SD Trend Plots ########
+
 # North background
 d_q_e_day_N_plot <- emiconplot(
         data = emission_reshaped,
@@ -884,26 +918,26 @@ d_q_e_hour_S_plot <- emiconplot(
 
 # Temperature and Relative Humidity 
 temp_cows_in_plot <- emiconplot(
-        data = emission_reshaped,
+        data = emission_reshaped %>% filter(analyzer != "baseline"),
         x = "hour",
         y = c("temp", "RH", "n_dairycows"),
         location_filter = "Barn inside")
 
 temp_cows_N_plot <- emiconplot(
-        data = emission_reshaped,
+        data = emission_reshaped %>% filter(analyzer != "baseline"),
         x = "hour",
         y = c("temp", "RH"),
         location_filter = "North background")
 
 # Wind speed and direction
 weather_N_plot <- emiconplot(
-        data = emission_reshaped,
+        data = emission_reshaped %>% filter(analyzer != "baseline"),
         x = "hour",
         y = c("wd_trv", "ws_trv"),
         location_filter = "North background")
 
 weather_S_plot <- emiconplot(
-        data = emission_reshaped,
+        data = emission_reshaped %>% filter(analyzer != "baseline"),
         x = "hour",
         y = c("wd_mst", "ws_mst"),
         location_filter = "South background")
@@ -973,16 +1007,16 @@ e_NH3_S_corrgram <- emicorrgram(
 
 
 ######## Heatmap #########
-emission_day_stat <- stat_error_table(emission_reshaped,
+emission_day_stat <- sd_cv_table(emission_reshaped,
                                  time.group = "day",
                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
-                                                    "CRDS.1", "CRDS.2", "CRDS.3")) %>%
+                                                    "CRDS.1", "CRDS.2", "CRDS.3", "baseline")) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
-emission_hour_stat <- stat_error_table(emission_reshaped,
+emission_hour_stat <- sd_cv_table(emission_reshaped,
                                  time.group = "hour",
                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
-                                                    "CRDS.1", "CRDS.2", "CRDS.3")) %>%
+                                                    "CRDS.1", "CRDS.2", "CRDS.3", "baseline")) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 # Daily heatmaps
@@ -1007,7 +1041,7 @@ q_S_hour_heatmap <- emiheatmap(emission_hour_stat,
                                time.group = "hour",
                                location.filter = "South background")
 
-####### Save plots as pdf ########
+######## Save plots as pdf ########
 # Combine all plots in a named list 
 all_plots <- list(
         c_r_in_mgm3_plot = c_r_in_mgm3_plot,
@@ -1070,6 +1104,119 @@ for (plot_name in names(all_plots)) {
                 dpi = 300
         )
 }
+
+
+######## SD and CV summary #########
+# Delta gases daily summary
+delta_day_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
+        group_by(day, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+# Q ventilation daily summary
+q_day_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var == "Q_vent") %>%
+        group_by(day, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+# CH4 emission daily summary
+e_CH4_day_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var == "e_CH4_gh") %>%
+        group_by(day, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+# NH3 emission daily summary
+e_NH3_day_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var == "e_NH3_gh") %>%
+        group_by(day, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+
+# Delta gases hourly summary
+delta_hour_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
+        group_by(hour, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+# Q ventilation hourly summary
+q_hour_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var == "Q_vent") %>%
+        group_by(hour, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+# CH4 emission hourly summary
+e_CH4_hour_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var == "e_CH4_gh") %>%
+        group_by(hour, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+# NH3 emission hourly summary
+e_NH3_hour_summary <- emission_day_stat %>%
+        filter(analyzer == "baseline",
+               var == "e_NH3_gh") %>%
+        group_by(hour, analyzer, location, var) %>%
+        summarise(
+                mean_value = mean(mean_value, na.rm = TRUE),
+                sd         = mean(sd, na.rm = TRUE),
+                cv         = mean(cv, na.rm = TRUE),
+                .groups = "drop"
+        )
+
+
+# Save Day CSVs
+readr::write_excel_csv(delta_day_summary, "delta_day_summary.csv")
+readr::write_excel_csv(q_day_summary, "q_day_summary.csv")
+readr::write_excel_csv(e_CH4_day_summary, "e_CH4_day_summary.csv")
+readr::write_excel_csv(e_NH3_day_summary, "e_NH3_day_summary.csv")
+
+
+# Save Hour CSVs
+readr::write_excel_csv(delta_hour_summary, "delta_hour_summary.csv")
+readr::write_excel_csv(q_hour_summary, "q_hour_summary.csv")
+readr::write_excel_csv(e_CH4_hour_summary, "e_CH4_hour_summary.csv")
+readr::write_excel_csv(e_NH3_hour_summary, "e_NH3_hour_summary.csv")
 
 
 ######## Linear mix modelling ##########
