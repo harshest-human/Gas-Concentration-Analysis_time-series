@@ -188,7 +188,7 @@ reshaper <- function(df) {
         return(df_long)
 }
 
-# Development of function stat_table to calculate baseline, mean, sd, and errors 
+# Development of function stat_table to calculate baseline, Mean, SD, CV, RE, ICC 
 stat_error_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
         library(dplyr)
         library(DescTools)
@@ -228,6 +228,64 @@ stat_error_table <- function(df_long, time.group = "hour", analyzer.levels = NUL
         }
         
         return(result_df %>% arrange(across(all_of(time.group)), location, var, analyzer))
+}
+
+icc_table <- function(df_long, vars = NULL, time.group = "day") {
+        library(dplyr)
+        library(tidyr)
+        library(irr)
+        
+        df <- df_long
+        
+        # Ensure day/hour columns exist
+        if (!"day" %in% names(df)) df <- df %>% mutate(day = as.Date(DATE.TIME))
+        if (!"hour" %in% names(df)) df <- df %>% mutate(hour = format(DATE.TIME, "%H"))
+        
+        # Filter variables if provided
+        if (!is.null(vars)) df <- df %>% filter(var %in% vars)
+        
+        results <- df %>%
+                group_by(across(all_of(c(time.group, "location", "var")))) %>%
+                summarise(
+                        icc_result = list({
+                                # Pivot wider: analyzers as columns
+                                wide <- pivot_wider(cur_data(), names_from = analyzer, values_from = value)
+                                
+                                # Keep only analyzer columns for ICC
+                                analyzer_cols <- setdiff(names(wide), c(time.group, "location", "var", "DATE.TIME", "hour"))
+                                mat <- wide[, analyzer_cols, drop = FALSE]
+                                
+                                # Only compute ICC if we have >=2 analyzers and >=2 rows
+                                if (ncol(mat) > 1 & nrow(mat) > 1) {
+                                        suppressWarnings(irr::icc(mat, model = "twoway", type = "consistency", unit = "average"))
+                                } else {
+                                        NA
+                                }
+                        }),
+                        .groups = "drop"
+                ) %>%
+                rowwise() %>%
+                mutate(
+                        ICC = if (is.list(icc_result)) round(icc_result$value, 2) else NA_real_,
+                        F   = if (is.list(icc_result)) round(icc_result$Fvalue, 2) else NA_real_,
+                        p   = if (is.list(icc_result) && !is.na(icc_result$p.value)) {
+                                if (icc_result$p.value < 0.01) {
+                                        formatC(icc_result$p.value, format = "e", digits = 2)
+                                } else {
+                                        as.character(round(icc_result$p.value, 2))
+                                }
+                        } else NA_character_,
+                        signif = if (is.list(icc_result) && !is.na(icc_result$p.value)) case_when(
+                                icc_result$p.value < 0.001 ~ "***",
+                                icc_result$p.value < 0.01  ~ "**",
+                                icc_result$p.value < 0.05  ~ "*",
+                                TRUE                       ~ "ns"
+                        ) else NA_character_
+                ) %>%
+                select(all_of(time.group), location, var, ICC, F, p, signif) %>%
+                ungroup()
+        
+        return(results)
 }
 
 # Development of function HSD_table
@@ -661,6 +719,73 @@ emiheatmap <- function(stat_df, vars = NULL, time.group = "hour", location.filte
         return(p)
 }
 
+# Development of function Bland-altman Plot
+bland_altman_plot <- function(data, var_filter, analyzer_pair,  location_filter = NULL, x = "DATE.TIME") {
+        library(dplyr)
+        library(ggplot2)
+        library(scales)
+        
+        # Rename var column if necessary
+        if ("var" %in% names(data) && !"variable" %in% names(data)) {
+                data <- data %>% rename(variable = var)
+        }
+        
+        # Filter variable
+        df <- data %>%
+                filter(variable == var_filter)
+        
+        # Filter location
+        if (!is.null(location_filter)) {
+                df <- df %>% filter(location %in% location_filter)
+        }
+        
+        # Keep only two analyzers
+        df <- df %>%
+                filter(analyzer %in% analyzer_pair)
+        
+        # Wide format for comparison
+        df_wide <- df %>%
+                select(all_of(c(x, "location", "analyzer", "value"))) %>%
+                tidyr::pivot_wider(names_from = analyzer, values_from = value)
+        
+        # Extract analyzer names
+        a1 <- analyzer_pair[1]
+        a2 <- analyzer_pair[2]
+        
+        # Compute Bland–Altman values
+        df_ba <- df_wide %>%
+                mutate(
+                        mean_val = ( .data[[a1]] + .data[[a2]] ) / 2,
+                        diff_val = .data[[a1]] - .data[[a2]]
+                )
+        
+        # Calculate bias & limits of agreement
+        bias <- mean(df_ba$diff_val, na.rm = TRUE)
+        sd_diff <- sd(df_ba$diff_val, na.rm = TRUE)
+        loa_upper <- bias + 1.96 * sd_diff
+        loa_lower <- bias - 1.96 * sd_diff
+        
+        # Plot
+        p <- ggplot(df_ba, aes(x = mean_val, y = diff_val)) +
+                geom_point(alpha = 0.6) +
+                geom_hline(yintercept = bias, color = "blue", linetype = "dashed", size = 1) +
+                geom_hline(yintercept = loa_upper, color = "red", linetype = "dotted", size = 1) +
+                geom_hline(yintercept = loa_lower, color = "red", linetype = "dotted", size = 1) +
+                scale_x_continuous(breaks = pretty_breaks(n = 8)) +
+                scale_y_continuous(breaks = pretty_breaks(n = 8)) +
+                labs(
+                        title = paste("Bland–Altman Plot:", a1, "vs", a2),
+                        subtitle = paste("Variable:", var_filter, 
+                                         ifelse(is.null(location_filter), "", paste("| Location:", location_filter))),
+                        x = paste("Mean of", a1, "and", a2),
+                        y = paste("Difference (", a1, "-", a2, ")")
+                ) +
+                theme_classic()
+        
+        print(p)
+        return(p)
+}
+
 # Development of Linear mixed model function
 linear_mixed_model <- function(var_name, data) {
         library(lme4)
@@ -944,6 +1069,106 @@ weather_S_plot <- emiconplot(
         y = c("wd_mst", "ws_mst"),
         location_filter = "South background")
 
+
+######## Bland-Altman plot ############
+#Compare FTIR.1 vs CRDS.1 for delta_CH4 at "North background"
+delta_CH4_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CH4",
+                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                             location_filter = "North background")
+
+#Compare FTIR.1 vs CRDS.1 for delta_CH4 at "South background"
+delta_CH4_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CH4",
+                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                             location_filter = "South background")
+
+#Compare FTIR.1 vs CRDS.1 for delta_CO2 at "North background"
+delta_CO2_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CO2",
+                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                             location_filter = "North background")
+
+#Compare FTIR.1 vs CRDS.1 for delta_CO2 at "South background"
+delta_CO2_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CO2",
+                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                             location_filter = "South background")
+
+#Compare FTIR.1 vs CRDS.1 for delta_NH3 at "North background"
+delta_NH3_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_NH3",
+                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                             location_filter = "North background")
+
+#Compare FTIR.1 vs CRDS.1 for delta_NH3 at "South background"
+delta_NH3_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_NH3",
+                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                             location_filter = "South background")
+
+#save plots
+# Save delta_CH4 plots
+ggsave("delta_CH4_N_A_blandplot.png", plot = delta_CH4_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CH4_S_A_blandplot.png", plot = delta_CH4_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+
+# Save delta_CO2 plots
+ggsave("delta_CO2_N_A_blandplot.png", plot = delta_CO2_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CO2_S_A_blandplot.png", plot = delta_CO2_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+
+# Save delta_NH3 plots
+ggsave("delta_NH3_N_A_blandplot.png", plot = delta_NH3_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_NH3_S_A_blandplot.png", plot = delta_NH3_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+
+
+#Compare FTIR.2 vs CRDS.2 for delta_CH4 at "North background"
+delta_CH4_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CH4",
+                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                             location_filter = "North background")
+
+#Compare FTIR.2 vs CRDS.2 for delta_CH4 at "South background"
+delta_CH4_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CH4",
+                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                             location_filter = "South background")
+
+#Compare FTIR.2 vs CRDS.2 for delta_CO2 at "North background"
+delta_CO2_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CO2",
+                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                             location_filter = "North background")
+
+#Compare FTIR.2 vs CRDS.2 for delta_CO2 at "South background"
+delta_CO2_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_CO2",
+                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                             location_filter = "South background")
+
+#Compare FTIR.2 vs CRDS.2 for delta_NH3 at "North background"
+delta_NH3_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_NH3",
+                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                             location_filter = "North background")
+
+#Compare FTIR.2 vs CRDS.2 for delta_NH3 at "South background"
+delta_NH3_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                             var_filter = "delta_NH3",
+                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                             location_filter = "South background")
+
+# Save delta_CH4 plots
+ggsave("delta_CH4_N_B_blandplot.png", plot = delta_CH4_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CH4_S_B_blandplot.png", plot = delta_CH4_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+
+# Save delta_CO2 plots
+ggsave("delta_CO2_N_B_blandplot.png", plot = delta_CO2_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CO2_S_B_blandplot.png", plot = delta_CO2_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+
+# Save delta_NH3 plots
+ggsave("delta_NH3_N_B_blandplot.png", plot = delta_NH3_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_NH3_S_B_blandplot.png", plot = delta_NH3_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+
 ######## Correlograms #######
 # North background
 d_CO2_N_corrgram <- emicorrgram(
@@ -1118,60 +1343,23 @@ readr::write_excel_csv(e_CH4_hour_summary, "e_CH4_hour_summary.csv")
 readr::write_excel_csv(e_NH3_hour_summary, "e_NH3_hour_summary.csv")
 
 
-icc_table <- function(df_long, vars = NULL, time.group = "day") {
-        library(dplyr)
-        library(tidyr)
-        library(irr)
-        
-        df <- df_long
-        
-        # Ensure day/hour columns exist
-        if (!"day" %in% names(df)) df <- df %>% mutate(day = as.Date(DATE.TIME))
-        if (!"hour" %in% names(df)) df <- df %>% mutate(hour = format(DATE.TIME, "%H"))
-        
-        # Filter variables if provided
-        if (!is.null(vars)) df <- df %>% filter(var %in% vars)
-        
-        results <- df %>%
-                group_by(across(all_of(c(time.group, "location", "var")))) %>%
-                summarise(
-                        icc_result = list({
-                                # Pivot wider: analyzers as columns
-                                wide <- pivot_wider(cur_data(), names_from = analyzer, values_from = value)
-                                
-                                # Keep only analyzer columns for ICC
-                                analyzer_cols <- setdiff(names(wide), c(time.group, "location", "var", "DATE.TIME", "hour"))
-                                mat <- wide[, analyzer_cols, drop = FALSE]
-                                
-                                # Only compute ICC if we have >=2 analyzers and >=2 rows
-                                if (ncol(mat) > 1 & nrow(mat) > 1) {
-                                        irr::icc(mat, model = "twoway", type = "consistency", unit = "average")
-                                } else {
-                                        NA
-                                }
-                        }),
-                        .groups = "drop"
-                ) %>%
-                rowwise() %>%
-                mutate(
-                        ICC     = if (is.list(icc_result)) icc_result$value else NA_real_,
-                        CI_low  = if (is.list(icc_result)) icc_result$lbound else NA_real_,
-                        CI_high = if (is.list(icc_result)) icc_result$ubound else NA_real_,
-                        F       = if (is.list(icc_result)) icc_result$Fvalue else NA_real_,
-                        p       = if (is.list(icc_result)) icc_result$p.value else NA_real_
-                ) %>%
-                select(-icc_result) %>%
-                ungroup()
-        
-        return(results)
-}
-
 # Only ICC 
-icc_table(emission_reshaped %>% filter(analyzer != "FTIR.4"), time.group = "hour", vars = "Q_vent")
-icc_table(emission_reshaped %>% filter(analyzer != "FTIR.4"), vars = c("delta_CO2", "delta_CH4", "delta_NH3"))
-icc_table(emission_reshaped %>% filter(analyzer != "FTIR.4"), vars = c("e_CH4_ghLU", "e_NH3_ghLU"))
+delta_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != c("FTIR.4", "baseline")),
+                           time.group = "day",
+                           vars = c("delta_CO2", "delta_CH4", "delta_NH3")) 
 
+q_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != c("FTIR.4", "baseline")),
+                       time.group = "day",
+                       vars = "Q_vent")
 
+e_icc_day <- icc_table(emission_reshaped%>% filter(analyzer != c("FTIR.4", "baseline")),
+                       time.group = "day", 
+                       vars = c("e_CH4_ghLU", "e_NH3_ghLU"))
+
+# Save Day CSVs
+readr::write_excel_csv(delta_icc_day, "delta_icc_day.csv")
+readr::write_excel_csv(q_icc_day, "q_icc_day.csv")
+readr::write_excel_csv(e_icc_day, "e_icc_day.csv")
 
 ######## Heatmap #########
 # Daily heatmaps
