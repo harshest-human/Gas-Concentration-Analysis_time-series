@@ -720,67 +720,101 @@ emiheatmap <- function(stat_df, vars = NULL, time.group = "hour", location.filte
 }
 
 # Development of function Bland-altman Plot
-bland_altman_plot <- function(data, var_filter, analyzer_pair,  location_filter = NULL, x = "DATE.TIME") {
+bland_altman_plot <- function(data, var_filter, analyzer_pair, location_filter = NULL, x = "DATE.TIME") {
         library(dplyr)
         library(ggplot2)
         library(scales)
         
-        # Rename var column if necessary
+        # mapping for variable labels
+        var_labels <- c(
+                "CO2_mgm3"     = "c[CO2]~'(mg '*m^-3*')'",
+                "CH4_mgm3"     = "c[CH4]~'(mg '*m^-3*')'",
+                "NH3_mgm3"     = "c[NH3]~'(mg '*m^-3*')'",
+                "r_CH4/CO2"    = "c[CH4]/c[CO2]~'('*'%'*')'",
+                "r_NH3/CO2"    = "c[NH3]/c[CO2]~'('*'%'*')'",
+                "delta_CO2"    = "Delta*c[CO2]~'(mg '*m^-3*')'",
+                "delta_CH4"    = "Delta*c[CH4]~'(mg '*m^-3*')'",
+                "delta_NH3"    = "Delta*c[NH3]~'(mg '*m^-3*')'",
+                "Q_vent"       = "Q~'('*m^3~h^-1~LU^-1*')'",
+                "e_CH4_gh"     = "e[CH4]~'(g '*h^-1*')'",
+                "e_NH3_gh"     = "e[NH3]~'(g '*h^-1*')'",
+                "e_CH4_ghLU"   = "e[CH4]~'(g '*h^-1~LU^-1*')'",
+                "e_NH3_ghLU"   = "e[NH3]~'(g '*h^-1~LU^-1*')'",
+                "temp"         = "'Temperature (°C)'",
+                "RH"           = "'Relative Humidity (%)'",
+                "ws_mst"       = "'Wind Speed Mast (m s^-1)'",
+                "wd_mst"       = "'Wind Direction Mast (°)'",
+                "wd_trv"       = "'Wind Direction Traverse (°)'",
+                "ws_trv"       = "'Wind Speed Traverse (m s^-1)'",
+                "n_dairycows"  = "'Number of Cows'"
+        )
+        
+        var_label_expr <- parse(text = var_labels[[var_filter]])[[1]]
+        
         if ("var" %in% names(data) && !"variable" %in% names(data)) {
                 data <- data %>% rename(variable = var)
         }
         
-        # Filter variable
         df <- data %>%
                 filter(variable == var_filter)
         
-        # Filter location
         if (!is.null(location_filter)) {
                 df <- df %>% filter(location %in% location_filter)
         }
         
-        # Keep only two analyzers
         df <- df %>%
                 filter(analyzer %in% analyzer_pair)
         
-        # Wide format for comparison
         df_wide <- df %>%
                 select(all_of(c(x, "location", "analyzer", "value"))) %>%
                 tidyr::pivot_wider(names_from = analyzer, values_from = value)
         
-        # Extract analyzer names
         a1 <- analyzer_pair[1]
         a2 <- analyzer_pair[2]
         
-        # Compute Bland–Altman values
         df_ba <- df_wide %>%
                 mutate(
                         mean_val = ( .data[[a1]] + .data[[a2]] ) / 2,
                         diff_val = .data[[a1]] - .data[[a2]]
                 )
         
-        # Calculate bias & limits of agreement
         bias <- mean(df_ba$diff_val, na.rm = TRUE)
         sd_diff <- sd(df_ba$diff_val, na.rm = TRUE)
         loa_upper <- bias + 1.96 * sd_diff
         loa_lower <- bias - 1.96 * sd_diff
         
-        # Plot
+        subtitle_expr <- if (!is.null(location_filter)) {
+                bquote(.(var_label_expr) ~ "|" ~ .(location_filter))
+        } else {
+                var_label_expr
+        }
+        
         p <- ggplot(df_ba, aes(x = mean_val, y = diff_val)) +
                 geom_point(alpha = 0.6) +
                 geom_hline(yintercept = bias, color = "blue", linetype = "dashed", size = 1) +
                 geom_hline(yintercept = loa_upper, color = "red", linetype = "dotted", size = 1) +
                 geom_hline(yintercept = loa_lower, color = "red", linetype = "dotted", size = 1) +
-                scale_x_continuous(breaks = pretty_breaks(n = 8)) +
-                scale_y_continuous(breaks = pretty_breaks(n = 8)) +
-                labs(
-                        title = paste("Bland–Altman Plot:", a1, "vs", a2),
-                        subtitle = paste("Variable:", var_filter, 
-                                         ifelse(is.null(location_filter), "", paste("| Location:", location_filter))),
-                        x = paste("Mean of", a1, "and", a2),
-                        y = paste("Difference (", a1, "-", a2, ")")
+                scale_x_continuous(
+                        breaks = pretty_breaks(n = 8),
+                        labels = number_format(accuracy = 0.1)
                 ) +
-                theme_classic()
+                scale_y_continuous(
+                        breaks = pretty_breaks(n = 8),
+                        labels = number_format(accuracy = 0.1)
+                ) +
+                ggtitle(
+                        bquote("Bland–Altman Plot:" ~ .(a1) ~ "vs" ~ .(a2)),
+                        subtitle = subtitle_expr
+                ) +
+                labs(
+                        x = bquote("Mean of" ~ .(a1) ~ "and" ~ .(a2)),
+                        y = bquote("Difference (" ~ .(a1) - .(a2) ~ ")")
+                ) +
+                theme_classic() +
+                theme(
+                        plot.subtitle = element_text(hjust = 0.5),
+                        plot.title = element_text(hjust = 0.5)
+                )
         
         print(p)
         return(p)
@@ -880,19 +914,12 @@ ATB_CRDS <- read.csv("20250408-14_ATB_wide_CRDS.1.csv")
 UB_CRDS <- read.csv("20250408-14_UB_wide_CRDS.2.csv")
 LUFA_CRDS <- read.csv("20250408-14_LUFA_wide_CRDS.3.csv")
 
-ANECO_FTIR_clean <- ANECO_FTIR %>%
-        mutate(across(-c(DATE.TIME, analyzer, lab), ~ {
-                lower <- quantile(.x, 0.25, na.rm = TRUE)
-                upper <- quantile(.x, 0.75, na.rm = TRUE)
-                ifelse(.x < lower | .x > upper, NA_real_, .x)
-        }))
-
 # Define your start and end time as POSIXct
 start_time <- "2025-04-08 12:00:00"
 end_time   <- "2025-04-14 12:00:00"
                          
 # Combine all data set
-gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR_clean, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS) %>%
+gas_data <- bind_rows(LUFA_FTIR, ANECO_FTIR, MBBM_FTIR, ATB_FTIR, ATB_CRDS, LUFA_CRDS, UB_CRDS) %>%
         mutate(DATE.TIME = ymd_hms(DATE.TIME, tz = "UTC")) %>%
         filter(DATE.TIME >= ymd_hms(start_time) &
                        DATE.TIME <= ymd_hms(end_time)) %>%
@@ -969,7 +996,7 @@ emission_result <- emission_result %>% select(-hour, -m_weight, -p_pregnancy_day
 # Write csv 
 write_excel_csv(emission_result, "20250408-15_ringversuche_emission_result.csv")
 
-######## Reshape and Calculate Statistical Summary (mean, SD and CV) #########
+######## Reshape Data #########
 emission_reshaped <-  reshaper(emission_result)  %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
         
@@ -1008,8 +1035,34 @@ c_r_S_mgm3_plot <- emiconplot(
               "r_CH4/CO2", "r_NH3/CO2"),
         location_filter = "South background")
 
-######## Daily Mean ± SD Trend Plots ########
+# Combine all plots in a named list 
+all_plots <- list(
+        c_r_in_mgm3_plot = c_r_in_mgm3_plot,
+        c_r_N_mgm3_plot  = c_r_N_mgm3_plot,
+        c_r_S_mgm3_plot  = c_r_S_mgm3_plot)
 
+# Define custom sizes (width, height) for each plot
+plot_sizes <- list(
+        c_r_in_mgm3_plot   = c(8, 8),
+        c_r_N_mgm3_plot    = c(8, 8),
+        c_r_S_mgm3_plot    = c(8, 8)
+)
+
+# Loop through and save each plot with its custom size
+for (plot_name in names(all_plots)) {
+        size <- plot_sizes[[plot_name]]
+        
+        ggsave(
+                filename = paste0(plot_name, ".pdf"),
+                plot = all_plots[[plot_name]],
+                width = size[1],
+                height = size[2],
+                dpi = 300
+        )
+}
+
+
+######## Daily Mean ± SD Trend Plots ########
 # North background
 d_q_e_day_N_plot <- emiconplot(
         data = emission_reshaped,
@@ -1025,6 +1078,31 @@ d_q_e_day_S_plot <- emiconplot(
         y = c("delta_CO2", "delta_CH4", "delta_NH3",
               "Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
         location_filter = "South background")
+
+# Combine all plots in a named list 
+all_plots <- list(
+        d_q_e_day_N_plot = d_q_e_day_N_plot,
+        d_q_e_day_S_plot = d_q_e_day_S_plot
+)
+
+# Define custom sizes (width, height) for each plot
+plot_sizes <- list(
+        d_q_e_day_N_plot   = c(9, 9),
+        d_q_e_day_S_plot   = c(9, 9)
+)
+
+# Loop through and save each plot with its custom size
+for (plot_name in names(all_plots)) {
+        size <- plot_sizes[[plot_name]]
+        
+        ggsave(
+                filename = paste0(plot_name, ".pdf"),
+                plot = all_plots[[plot_name]],
+                width = size[1],
+                height = size[2],
+                dpi = 300
+        )
+}
 
 ######## Hourly Mean ± SD Trend Plots ########
 # North background
@@ -1043,6 +1121,33 @@ d_q_e_hour_S_plot <- emiconplot(
               "Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
         location_filter = "South background")
 
+
+# Combine all plots in a named list 
+all_plots <- list(
+        d_q_e_hour_N_plot = d_q_e_hour_N_plot,
+        d_q_e_hour_S_plot = d_q_e_hour_S_plot
+)
+
+# Define custom sizes (width, height) for each plot
+plot_sizes <- list(
+        d_q_e_hour_N_plot   = c(9, 9),
+        d_q_e_hour_S_plot   = c(9, 9)
+)
+
+# Loop through and save each plot with its custom size
+for (plot_name in names(all_plots)) {
+        size <- plot_sizes[[plot_name]]
+        
+        ggsave(
+                filename = paste0(plot_name, ".pdf"),
+                plot = all_plots[[plot_name]],
+                width = size[1],
+                height = size[2],
+                dpi = 300
+        )
+}
+
+######## Weather Plots ########
 # Temperature and Relative Humidity 
 temp_cows_in_plot <- emiconplot(
         data = emission_reshaped %>% filter(analyzer != "baseline"),
@@ -1109,16 +1214,16 @@ delta_NH3_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
 
 #save plots
 # Save delta_CH4 plots
-ggsave("delta_CH4_N_A_blandplot.png", plot = delta_CH4_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CH4_S_A_blandplot.png", plot = delta_CH4_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CH4_N_A_blandplot.pdf", plot = delta_CH4_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CH4_S_A_blandplot.pdf", plot = delta_CH4_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
 
 # Save delta_CO2 plots
-ggsave("delta_CO2_N_A_blandplot.png", plot = delta_CO2_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CO2_S_A_blandplot.png", plot = delta_CO2_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CO2_N_A_blandplot.pdf", plot = delta_CO2_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CO2_S_A_blandplot.pdf", plot = delta_CO2_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
 
 # Save delta_NH3 plots
-ggsave("delta_NH3_N_A_blandplot.png", plot = delta_NH3_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_NH3_S_A_blandplot.png", plot = delta_NH3_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_NH3_N_A_blandplot.pdf", plot = delta_NH3_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_NH3_S_A_blandplot.pdf", plot = delta_NH3_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
 
 
 #Compare FTIR.2 vs CRDS.2 for delta_CH4 at "North background"
@@ -1158,16 +1263,16 @@ delta_NH3_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
                                              location_filter = "South background")
 
 # Save delta_CH4 plots
-ggsave("delta_CH4_N_B_blandplot.png", plot = delta_CH4_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CH4_S_B_blandplot.png", plot = delta_CH4_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CH4_N_B_blandplot.pdf", plot = delta_CH4_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CH4_S_B_blandplot.pdf", plot = delta_CH4_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
 
 # Save delta_CO2 plots
-ggsave("delta_CO2_N_B_blandplot.png", plot = delta_CO2_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CO2_S_B_blandplot.png", plot = delta_CO2_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CO2_N_B_blandplot.pdf", plot = delta_CO2_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_CO2_S_B_blandplot.pdf", plot = delta_CO2_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
 
 # Save delta_NH3 plots
-ggsave("delta_NH3_N_B_blandplot.png", plot = delta_NH3_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_NH3_S_B_blandplot.png", plot = delta_NH3_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_NH3_N_B_blandplot.pdf", plot = delta_NH3_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+ggsave("delta_NH3_S_B_blandplot.pdf", plot = delta_NH3_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
 
 ######## Correlograms #######
 # North background
@@ -1232,6 +1337,38 @@ e_NH3_S_corrgram <- emicorrgram(
         target_variable = "e_NH3_ghLU", 
         locations = "South background")
 
+# Combine all plots in a named list 
+all_plots <- list(
+        q_N_corrgram      = q_N_corrgram,
+        q_S_corrgram      = q_S_corrgram,
+        e_CH4_N_corrgram  = e_CH4_N_corrgram,
+        e_CH4_S_corrgram  = e_CH4_S_corrgram,
+        e_NH3_N_corrgram  = e_NH3_N_corrgram,
+        e_NH3_S_corrgram  = e_NH3_S_corrgram
+)
+
+# Define custom sizes (width, height) for each plot
+plot_sizes <- list(
+        q_N_corrgram       = c(5, 6),
+        q_S_corrgram       = c(5, 6),
+        e_CH4_N_corrgram   = c(5, 6),
+        e_CH4_S_corrgram   = c(5, 6),
+        e_NH3_N_corrgram   = c(5, 6),
+        e_NH3_S_corrgram   = c(5, 6)
+)
+
+# Loop through and save each plot with its custom size
+for (plot_name in names(all_plots)) {
+        size <- plot_sizes[[plot_name]]
+        
+        ggsave(
+                filename = paste0(plot_name, ".pdf"),
+                plot = all_plots[[plot_name]],
+                width = size[1],
+                height = size[2],
+                dpi = 300
+        )
+}
 
 ######## Statistical Summary #########
 emission_day_stat <- stat_error_table(emission_reshaped,
@@ -1335,20 +1472,18 @@ readr::write_excel_csv(q_day_summary, "q_day_summary.csv")
 readr::write_excel_csv(e_CH4_day_summary, "e_CH4_day_summary.csv")
 readr::write_excel_csv(e_NH3_day_summary, "e_NH3_day_summary.csv")
 
-
 # Save Hour CSVs
 readr::write_excel_csv(delta_hour_summary, "delta_hour_summary.csv")
 readr::write_excel_csv(q_hour_summary, "q_hour_summary.csv")
 readr::write_excel_csv(e_CH4_hour_summary, "e_CH4_hour_summary.csv")
 readr::write_excel_csv(e_NH3_hour_summary, "e_NH3_hour_summary.csv")
 
-
 # Only ICC 
-delta_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != c("FTIR.4", "baseline")),
+delta_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != "baseline"),
                            time.group = "day",
                            vars = c("delta_CO2", "delta_CH4", "delta_NH3")) 
 
-q_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != c("FTIR.4", "baseline")),
+q_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != "baseline"),
                        time.group = "day",
                        vars = "Q_vent")
 
@@ -1384,26 +1519,8 @@ q_S_hour_heatmap <- emiheatmap(emission_hour_stat,
                                time.group = "hour",
                                location.filter = "South background")
 
-######## Save plots as pdf ########
 # Combine all plots in a named list 
 all_plots <- list(
-        c_r_in_mgm3_plot = c_r_in_mgm3_plot,
-        c_r_N_mgm3_plot  = c_r_N_mgm3_plot,
-        c_r_S_mgm3_plot  = c_r_S_mgm3_plot,
-        d_q_e_day_N_plot = d_q_e_day_N_plot,
-        d_q_e_day_S_plot = d_q_e_day_S_plot,
-        d_q_e_hour_N_plot = d_q_e_hour_N_plot,
-        d_q_e_hour_S_plot = d_q_e_hour_S_plot,
-        temp_cows_in_plot = temp_cows_in_plot,
-        temp_cows_N_plot  = temp_cows_N_plot,
-        weather_N_plot = weather_N_plot,
-        weather_S_plot = weather_S_plot,
-        q_N_corrgram      = q_N_corrgram,
-        q_S_corrgram      = q_S_corrgram,
-        e_CH4_N_corrgram  = e_CH4_N_corrgram,
-        e_CH4_S_corrgram  = e_CH4_S_corrgram,
-        e_NH3_N_corrgram  = e_NH3_N_corrgram,
-        e_NH3_S_corrgram  = e_NH3_S_corrgram,
         q_S_day_heatmap  = q_S_day_heatmap,
         q_N_day_heatmap  = q_N_day_heatmap,
         q_N_hour_heatmap = q_N_hour_heatmap,
@@ -1412,23 +1529,6 @@ all_plots <- list(
 
 # Define custom sizes (width, height) for each plot
 plot_sizes <- list(
-        c_r_in_mgm3_plot   = c(12, 10.5),
-        c_r_N_mgm3_plot    = c(12, 10.5),
-        c_r_S_mgm3_plot    = c(12, 10.5),
-        d_q_e_day_N_plot   = c(10, 12.5),
-        d_q_e_day_S_plot   = c(10, 12.5),
-        d_q_e_hour_N_plot  = c(10, 12.5),
-        d_q_e_hour_S_plot  = c(10, 12.5),
-        temp_cows_in_plot  = c(8, 6.5),
-        temp_cows_N_plot   = c(8, 4.5),
-        weather_N_plot     = c(8, 5.5),
-        weather_S_plot     = c(8, 5.5),
-        q_N_corrgram       = c(5, 6),
-        q_S_corrgram       = c(5, 6),
-        e_CH4_N_corrgram   = c(5, 6),
-        e_CH4_S_corrgram   = c(5, 6),
-        e_NH3_N_corrgram   = c(5, 6),
-        e_NH3_S_corrgram   = c(5, 6),
         q_S_day_heatmap    = c(6, 4),
         q_N_day_heatmap    = c(6, 4),
         q_N_hour_heatmap   = c(12, 4),
@@ -1447,7 +1547,6 @@ for (plot_name in names(all_plots)) {
                 dpi = 300
         )
 }
-
 
 ######## Linear mix modelling ##########
 colnames(emission_result)
