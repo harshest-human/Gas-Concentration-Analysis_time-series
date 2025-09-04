@@ -22,6 +22,7 @@ library(rstatix)
 library(multcompView)
 library(viridis)
 library(lme4)
+library(patchwork)
 
 ######## Development of functions #######
 # Development of indirect.CO2.balance function
@@ -803,7 +804,7 @@ bland_altman_plot <- function(data, var_filter, analyzer_pair, location_filter =
                         labels = number_format(accuracy = 0.1)
                 ) +
                 ggtitle(
-                        bquote("Bland–Altman Plot:" ~ .(a1) ~ "vs" ~ .(a2)),
+                        bquote(),
                         subtitle = subtitle_expr
                 ) +
                 labs(
@@ -1213,18 +1214,17 @@ delta_NH3_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
                                              location_filter = "South background")
 
 #save plots
-# Save delta_CH4 plots
-ggsave("delta_CH4_N_A_blandplot.pdf", plot = delta_CH4_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CH4_S_A_blandplot.pdf", plot = delta_CH4_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+# Add some margins to each plot
+plots_list_A <- list(
+        delta_CH4_N_A_blandplot, delta_CO2_N_A_blandplot, delta_NH3_N_A_blandplot,
+        delta_CH4_S_A_blandplot, delta_CO2_S_A_blandplot, delta_NH3_S_A_blandplot)
 
-# Save delta_CO2 plots
-ggsave("delta_CO2_N_A_blandplot.pdf", plot = delta_CO2_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CO2_S_A_blandplot.pdf", plot = delta_CO2_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+plots_list_A <- lapply(plots_list_A, function(p) p + theme(plot.margin = margin(10, 10, 10, 10)))
 
-# Save delta_NH3 plots
-ggsave("delta_NH3_N_A_blandplot.pdf", plot = delta_NH3_N_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_NH3_S_A_blandplot.pdf", plot = delta_NH3_S_A_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+# Combine with 3 columns × 2 rows
+plots_A <- wrap_plots(plots_list_A, ncol = 3, nrow = 2)
 
+ggsave("BlandAltman_AnalyzerA.pdf", plot = plots_A, width = 12, height = 6, units = "in", dpi = 300)
 
 #Compare FTIR.2 vs CRDS.2 for delta_CH4 at "North background"
 delta_CH4_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
@@ -1262,18 +1262,18 @@ delta_NH3_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
                                              analyzer_pair = c("FTIR.2", "CRDS.2"),
                                              location_filter = "South background")
 
-# Save delta_CH4 plots
-ggsave("delta_CH4_N_B_blandplot.pdf", plot = delta_CH4_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CH4_S_B_blandplot.pdf", plot = delta_CH4_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+# Save plots
+# Add some margins to each plot
+plots_list_B <- list(
+        delta_CH4_N_B_blandplot, delta_CO2_N_B_blandplot, delta_NH3_N_B_blandplot,
+        delta_CH4_S_B_blandplot, delta_CO2_S_B_blandplot, delta_NH3_S_B_blandplot)
 
-# Save delta_CO2 plots
-ggsave("delta_CO2_N_B_blandplot.pdf", plot = delta_CO2_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_CO2_S_B_blandplot.pdf", plot = delta_CO2_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+plots_list_B <- lapply(plots_list_B, function(p) p + theme(plot.margin = margin(10, 10, 10, 10)))
 
-# Save delta_NH3 plots
-ggsave("delta_NH3_N_B_blandplot.pdf", plot = delta_NH3_N_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
-ggsave("delta_NH3_S_B_blandplot.pdf", plot = delta_NH3_S_B_blandplot, width = 4, height = 4, units = "in", dpi = 300)
+# Combine with 3 columns × 2 rows
+plots_B <- wrap_plots(plots_list_B, ncol = 3, nrow = 2)
 
+ggsave("BlandAltman_AnalyzerB.pdf", plot = plots_B, width = 12, height = 6, units = "in", dpi = 300)
 ######## Correlograms #######
 # North background
 d_CO2_N_corrgram <- emicorrgram(
