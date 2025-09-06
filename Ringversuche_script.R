@@ -332,6 +332,115 @@ HSD_table <- function(data, group_var = "analyzer") {
         return(combined)
 }
 
+# Development of function concentration boxplot
+conboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE) {
+        library(dplyr)
+        library(ggplot2)
+        library(scales)
+        library(stringr)
+        
+        # Standardize column names
+        if ("var" %in% names(data) && !"variable" %in% names(data)) {
+                data <- data %>% rename(variable = var)
+        }
+        
+        # Filter by location if specified
+        if (!is.null(location_filter)) {
+                data <- data %>% filter(location %in% location_filter)
+        }
+        
+        # Filter by variable if specified
+        if (!is.null(y)) {
+                data <- data %>% filter(variable %in% y)
+        }
+        
+        # Choose value column
+        value_col <- if (plot_err) "err" else "value"
+        
+        # Smart facet labels
+        facet_labels_expr <- c(
+                "CO2_mgm3"     = "c[CO2]~'(mg '*m^-3*')'",
+                "CH4_mgm3"     = "c[CH4]~'(mg '*m^-3*')'",
+                "NH3_mgm3"     = "c[NH3]~'(mg '*m^-3*')'",
+                "r_CH4/CO2"    = "c[CH4]/c[CO2]~'('*'%'*')'",
+                "r_NH3/CO2"    = "c[NH3]/c[CO2]~'('*'%'*')'",
+                "delta_CO2"    = "Delta*c[CO2]~'(mg '*m^-3*')'",
+                "delta_CH4"    = "Delta*c[CH4]~'(mg '*m^-3*')'",
+                "delta_NH3"    = "Delta*c[NH3]~'(mg '*m^-3*')'",
+                "Q_vent"       = "Q~'('*m^3~h^-1~LU^-1*')'",
+                "e_CH4_gh"     = "e[CH4]~'(g '*h^-1*')'",
+                "e_NH3_gh"     = "e[NH3]~'(g '*h^-1*')'",
+                "e_CH4_ghLU"   = "e[CH4]~'(g '*h^-1~LU^-1*')'",
+                "e_NH3_ghLU"   = "e[NH3]~'(g '*h^-1~LU^-1*')'",
+                "temp"         = "Temperature " ~ "(°C)",
+                "RH"           = "Relative Humidity " ~ "(%)",
+                "ws_mst"       = "Wind Speed Mast " ~ "(m " *s^-1* ")",
+                "wd_mst"       = "Wind Diection Mast " ~ "(°)",
+                "wd_trv"       = "Wind Direction Traverse " ~ "(°)",
+                "ws_trv"       = "Wind Speed Traverse " ~ "(m " *s^-1* ")",
+                "n_dairycows"  = "'Number of Cows'"
+        )
+        
+        missing_vars <- setdiff(y, names(facet_labels_expr))
+        if (length(missing_vars) > 0) {
+                stop("These variables are missing facet labels: ", paste(missing_vars, collapse = ", "))
+        }
+        
+        data <- data %>%
+                mutate(facet_label = factor(
+                        facet_labels_expr[as.character(variable)],
+                        levels = facet_labels_expr[y]
+                ))
+        
+        # Colors
+        analyzer_colors <- c(
+                "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
+                "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
+                "CRDS.3" = "#a6761d", "baseline" = "black"
+        )
+        
+        # Fill all analyzers in data with defaults if missing
+        all_analyzers <- unique(data$analyzer)
+        analyzer_colors_full <- setNames(rep("black", length(all_analyzers)), all_analyzers)
+        analyzer_colors_full[names(analyzer_colors)] <- analyzer_colors
+        
+        # Labels
+        ylab_to_use <- if (plot_err) "Relative error (%)" else "Value"
+        xlab_to_use <- "Analyzer"
+        
+        # Plot
+        p <- ggplot(data, aes(x = analyzer, y = .data[[value_col]], color = analyzer)) +
+                geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+                geom_jitter(width = 0.2, alpha = 0.5, size = 1) +
+                
+                scale_color_manual(values = analyzer_colors_full) +
+                
+                facet_grid(facet_label ~ location, scales = "free_y", switch = "y",
+                           labeller = labeller(
+                                   facet_label = label_parsed,
+                                   location = label_value
+                           )) +
+                
+                scale_y_continuous(breaks = pretty_breaks(n = 7)) +
+                labs(x = xlab_to_use, y = ylab_to_use) +
+                theme_classic() +
+                theme(
+                        text = element_text(size = 10),
+                        axis.text = element_text(size = 10),
+                        axis.title = element_text(size = 10),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+                        strip.text.y.left = element_text(size = 10, vjust = 0.5),
+                        panel.border = element_rect(color = "black", fill = NA),
+                        legend.position = "bottom",
+                        legend.title = element_blank(),
+                        plot.title = element_text(hjust = 0.5)
+                ) +
+                guides(color = guide_legend(nrow = 1))
+        
+        print(p)
+        return(p)
+}
+
 # Development of function emission and concentration plot
 emiconplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE, x = "DATE.TIME") {
         library(dplyr)
@@ -1030,33 +1139,41 @@ emission_HSD <- HSD_table(data = emission_reshaped %>%
 write_excel_csv(result_HSD_summary, "result_HSD_summary.csv")
 
 ######## Absolute Concentration Trend plots ########
-# Concentrations only
-c_r_in_mgm3_plot <- emiconplot(
+# Boxplot
+c_boxplot <- conboxplot (
+        data = concentration_reshaped,
+        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
+        location_filter = c("North background", "South background", "Barn inside"))
+
+# Trend Plot
+c_in_mgm3_plot <- emiconplot(
         data = concentration_reshaped,
         y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         location_filter = "Barn inside")
 
-c_r_N_mgm3_plot <- emiconplot(
+c_N_mgm3_plot <- emiconplot(
         data = concentration_reshaped,
         y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         location_filter = "North background")
 
-c_r_S_mgm3_plot <- emiconplot(
+c_S_mgm3_plot <- emiconplot(
         data = concentration_reshaped,
         y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         location_filter = "South background")
 
 # Combine all plots in a named list 
 all_plots <- list(
-        c_r_in_mgm3_plot = c_r_in_mgm3_plot,
-        c_r_N_mgm3_plot  = c_r_N_mgm3_plot,
-        c_r_S_mgm3_plot  = c_r_S_mgm3_plot)
+        c_boxplot      = c_boxplot,
+        c_in_mgm3_plot = c_in_mgm3_plot,
+        c_N_mgm3_plot  = c_N_mgm3_plot,
+        c_S_mgm3_plot  = c_S_mgm3_plot)
 
 # Define custom sizes (width, height) for each plot
 plot_sizes <- list(
-        c_r_in_mgm3_plot   = c(12, 12),
-        c_r_N_mgm3_plot    = c(12, 12),
-        c_r_S_mgm3_plot    = c(12, 12)
+        c_boxplot        = c(10, 8),
+        c_in_mgm3_plot   = c(12, 12),
+        c_N_mgm3_plot    = c(12, 12),
+        c_S_mgm3_plot    = c(12, 12)
 )
 
 # Loop through and save each plot with its custom size
