@@ -462,11 +462,11 @@ emiconplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE,
                 labs(x = xlab_to_use, y = ylab_to_use, title = unique(summary_data$location)) +
                 theme_classic() +
                 theme(
-                        text = element_text(size = 10),
-                        axis.text = element_text(size = 10),
-                        axis.title = element_text(size = 10),
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
-                        strip.text.y.left = element_text(size = 10, vjust = 0.5),
+                        text = element_text(size = 12),
+                        axis.text = element_text(size = 12),
+                        axis.title = element_text(size = 12),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+                        strip.text.y.left = element_text(size = 12, vjust = 0.5),
                         panel.border = element_rect(color = "black", fill = NA),
                         legend.position = "bottom",
                         legend.title = element_blank(),
@@ -986,7 +986,7 @@ write_excel_csv(input_combined, "20250408-15_ringversuche_input_combined_data.cs
 
 ######## Computation of emissions, ventilation rates and ratios #########
 # Calculate emissions and ratios using the function
-emission_result <- indirect.CO2.balance(input_combined)
+emission_result <- indirect.CO2.balance(input_combined %>% filter(analyzer != "FTIR.4"))
 
 # Remove constants and forumal inputs
 emission_result <- emission_result %>% select(-hour, -m_weight, -p_pregnancy_day, 
@@ -998,6 +998,18 @@ emission_result <- emission_result %>% select(-hour, -m_weight, -p_pregnancy_day
 write_excel_csv(emission_result, "20250408-15_ringversuche_emission_result.csv")
 
 ######## Reshape Data #########
+concentration_result <- indirect.CO2.balance(input_combined) %>%
+        select("DATE.TIME", "analyzer", 
+               "CO2_mgm3_in", "CH4_mgm3_in", "NH3_mgm3_in",
+               "CO2_mgm3_S", "CH4_mgm3_S", "NH3_mgm3_S",
+               "CO2_mgm3_N", "CH4_mgm3_N", "NH3_mgm3_N")
+
+concentration_reshaped <- reshaper(concentration_result) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+# Write csv
+write_excel_csv(concentration_reshaped, "20250408-15_ringversuche_concentration_reshaped.csv")
+
 emission_reshaped <-  reshaper(emission_result)  %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
         
@@ -1005,11 +1017,12 @@ emission_reshaped <-  reshaper(emission_result)  %>%
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
 ######## ANOVA and HSD Summary ########
-result_HSD_summary <- HSD_table(data = emission_reshaped %>%
+concentration_HSD <- HSD_table(data = concentration_reshaped)
+
+emission_HSD <- HSD_table(data = emission_reshaped %>%
                                         filter(analyzer %in% c("FTIR.1",
                                                                "FTIR.2",
                                                                "FTIR.3",
-                                                               "FTIR.4",
                                                                "CRDS.1",
                                                                "CRDS.2",
                                                                "CRDS.3")))
@@ -1019,21 +1032,18 @@ write_excel_csv(result_HSD_summary, "result_HSD_summary.csv")
 ######## Absolute Concentration Trend plots ########
 # Concentrations only
 c_r_in_mgm3_plot <- emiconplot(
-        data = emission_reshaped,
-        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3", 
-              "r_CH4/CO2", "r_NH3/CO2"),
+        data = concentration_reshaped,
+        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         location_filter = "Barn inside")
 
 c_r_N_mgm3_plot <- emiconplot(
-        data = emission_reshaped,
-        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3", 
-              "r_CH4/CO2", "r_NH3/CO2"),
+        data = concentration_reshaped,
+        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         location_filter = "North background")
 
 c_r_S_mgm3_plot <- emiconplot(
-        data = emission_reshaped,
-        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3", 
-              "r_CH4/CO2", "r_NH3/CO2"),
+        data = concentration_reshaped,
+        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         location_filter = "South background")
 
 # Combine all plots in a named list 
@@ -1044,9 +1054,9 @@ all_plots <- list(
 
 # Define custom sizes (width, height) for each plot
 plot_sizes <- list(
-        c_r_in_mgm3_plot   = c(8, 8),
-        c_r_N_mgm3_plot    = c(8, 8),
-        c_r_S_mgm3_plot    = c(8, 8)
+        c_r_in_mgm3_plot   = c(12, 12),
+        c_r_N_mgm3_plot    = c(12, 12),
+        c_r_S_mgm3_plot    = c(12, 12)
 )
 
 # Loop through and save each plot with its custom size
