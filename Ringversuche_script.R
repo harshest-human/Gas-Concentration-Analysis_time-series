@@ -189,7 +189,7 @@ reshaper <- function(df) {
         return(df_long)
 }
 
-# Development of function stat_table to calculate baseline, Mean, SD, CV, RE, ICC 
+# Development of function stat_table to calculate SD, and CV
 sd_cv_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
         # Load required libraries
         library(dplyr)
@@ -225,6 +225,7 @@ sd_cv_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
                        arrange(across(all_of(time.group)), location, var, analyzer))
 }
 
+# Development of function stat_table to calculate RE
 pct_err <- function(df) {
         df %>%
                 group_by(DATE.TIME, location, var) %>%
@@ -236,35 +237,55 @@ pct_err <- function(df) {
                 select(-baseline_value)
 }
 
-icc_table <- function(df_long, vars = NULL, time.group = "day") {
+# Development of function stat_table to calculate ICC 
+icc_table <- function(df_long, vars = NULL, time.group = NULL) {
         library(dplyr)
         library(tidyr)
         library(irr)
         
         df <- df_long
         
-        # Ensure day/hour columns exist
-        if (!"day" %in% names(df)) df <- df %>% mutate(day = as.Date(DATE.TIME))
-        if (!"hour" %in% names(df)) df <- df %>% mutate(hour = format(DATE.TIME, "%H"))
-        
         # Filter variables if provided
         if (!is.null(vars)) df <- df %>% filter(var %in% vars)
         
+        skipped_groups <- list()
+        
+        # Determine grouping columns
+        group_cols <- c("location", "var")
+        if (!is.null(time.group)) {
+                if (!all(time.group %in% names(df))) {
+                        stop("time.group column(s) not found in the dataframe")
+                }
+                group_cols <- c(time.group, group_cols)
+        }
+        
         results <- df %>%
-                group_by(across(all_of(c(time.group, "location", "var")))) %>%
+                group_by(across(all_of(c("location", "var")))) %>%
                 summarise(
                         icc_result = list({
-                                # Pivot wider: analyzers as columns
-                                wide <- pivot_wider(cur_data(), names_from = analyzer, values_from = value)
+                                # Pivot wider with duplicates summarized by mean
+                                wide <- pivot_wider(cur_data(),
+                                                    names_from = analyzer,
+                                                    values_from = value,
+                                                    values_fn = mean)
                                 
-                                # Keep only analyzer columns for ICC
-                                analyzer_cols <- setdiff(names(wide), c(time.group, "location", "var", "DATE.TIME", "hour"))
+                                analyzer_cols <- setdiff(names(wide), group_cols)
                                 mat <- wide[, analyzer_cols, drop = FALSE]
                                 
-                                # Only compute ICC if we have >=2 analyzers and >=2 rows
+                                # Remove rows with all NA
+                                mat <- mat[rowSums(!is.na(mat)) > 0, , drop = FALSE]
+                                
+                                # Compute ICC if at least 2 analyzers and 2 rows
                                 if (ncol(mat) > 1 & nrow(mat) > 1) {
-                                        suppressWarnings(irr::icc(mat, model = "twoway", type = "consistency", unit = "average"))
+                                        tryCatch(
+                                                suppressWarnings(irr::icc(mat, model = "twoway", type = "consistency", unit = "average")),
+                                                error = function(e) NA
+                                        )
                                 } else {
+                                        skipped_groups <<- append(skipped_groups, 
+                                                                  paste0("location=", unique(cur_data()$location),
+                                                                         ", var=", unique(cur_data()$var),
+                                                                         " (rows=", nrow(mat), ", analyzers=", ncol(mat), ")"))
                                         NA
                                 }
                         }),
@@ -272,24 +293,38 @@ icc_table <- function(df_long, vars = NULL, time.group = "day") {
                 ) %>%
                 rowwise() %>%
                 mutate(
-                        ICC = if (is.list(icc_result)) round(icc_result$value, 2) else NA_real_,
-                        F   = if (is.list(icc_result)) round(icc_result$Fvalue, 2) else NA_real_,
-                        p   = if (is.list(icc_result) && !is.na(icc_result$p.value)) {
-                                if (icc_result$p.value < 0.01) {
-                                        formatC(icc_result$p.value, format = "e", digits = 2)
-                                } else {
-                                        as.character(round(icc_result$p.value, 2))
-                                }
-                        } else NA_character_,
-                        signif = if (is.list(icc_result) && !is.na(icc_result$p.value)) case_when(
-                                icc_result$p.value < 0.001 ~ "***",
-                                icc_result$p.value < 0.01  ~ "**",
-                                icc_result$p.value < 0.05  ~ "*",
-                                TRUE                       ~ "ns"
-                        ) else NA_character_
-                ) %>%
-                select(all_of(time.group), location, var, ICC, F, p, signif) %>%
+                        ICC = tryCatch(if (inherits(icc_result, "icc")) round(icc_result$value, 2) else NA_real_, error = function(e) NA_real_),
+                        F   = tryCatch(if (inherits(icc_result, "icc")) round(icc_result$Fvalue, 2) else NA_real_, error = function(e) NA_real_),
+                        p   = tryCatch({
+                                if (inherits(icc_result, "icc")) {
+                                        pval <- icc_result$p.value
+                                        if (is.na(pval)) NA_character_
+                                        else if (pval < 0.01) formatC(pval, format = "e", digits = 2)
+                                        else as.character(round(pval, 2))
+                                } else NA_character_
+                        }, error = function(e) NA_character_),
+                        signif = tryCatch({
+                                if (inherits(icc_result, "icc")) {
+                                        pval <- icc_result$p.value
+                                        if (is.na(pval)) NA_character_
+                                        else if (pval < 0.001) "***"
+                                        else if (pval < 0.01) "**"
+                                        else if (pval < 0.05) "*"
+                                        else "ns"
+                                } else NA_character_
+                        }, error = function(e) NA_character_
+                        )) %>%
+                select(location, var, ICC, F, p, signif) %>%
                 ungroup()
+        
+        # Print skipped groups
+        if (length(skipped_groups) > 0) {
+                cat("Skipped ICC calculations for the following groups due to insufficient data:\n")
+                cat(paste0("- ", skipped_groups, collapse = "\n"), "\n\n")
+        }
+        
+        cat("ICC calculation results:\n")
+        print(results)
         
         return(results)
 }
@@ -1181,7 +1216,7 @@ emission_HSD <- HSD_table(data = emission_reshaped %>%
 write_excel_csv(concentration_HSD, "concentration_HSD.csv")
 write_excel_csv(emission_HSD, "emission_HSD.csv")
 
-######## Statistical Summary #########
+######## SD and CV Summary #########
 emission_day_stat <- sd_cv_table(emission_reshaped,
                                  time.group = "day",
                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
@@ -1197,11 +1232,11 @@ emission_hour_stat <- sd_cv_table(emission_reshaped,
 # Delta gases daily summary
 delta_day_summary <- emission_day_stat %>%
         filter(var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
-        group_by(day, analyzer, location, var) %>%
+        group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
+                  .groups = "drop") %>% arrange(var)
 
 # Q ventilation daily summary
 q_day_summary <- emission_day_stat %>%
@@ -1210,7 +1245,7 @@ q_day_summary <- emission_day_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
+                  .groups = "drop") %>% arrange(var)
 
 # CH4 emission daily summary
 e_CH4_day_summary <- emission_day_stat %>%
@@ -1219,7 +1254,7 @@ e_CH4_day_summary <- emission_day_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
+                  .groups = "drop") %>% arrange(var)
 
 # NH3 emission daily summary
 e_NH3_day_summary <- emission_day_stat %>%
@@ -1229,8 +1264,7 @@ e_NH3_day_summary <- emission_day_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
-
+                  .groups = "drop") %>% arrange(var)
 
 # Delta gases daily summary
 delta_hour_summary <- emission_hour_stat %>%
@@ -1239,7 +1273,7 @@ delta_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
+                  .groups = "drop") %>% arrange(var)
 
 # Q ventilation daily summary
 q_hour_summary <- emission_hour_stat %>%
@@ -1248,7 +1282,8 @@ q_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
+                  .groups = "drop") %>% arrange(var)
+
 
 # CH4 emission daily summary
 e_CH4_hour_summary <- emission_hour_stat %>%
@@ -1257,7 +1292,7 @@ e_CH4_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
+                  .groups = "drop") %>% arrange(var)
 
 # NH3 emission daily summary
 e_NH3_hour_summary <- emission_hour_stat %>%
@@ -1267,7 +1302,7 @@ e_NH3_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop")
+                  .groups = "drop") %>% arrange(var)
 
 # Save Day CSVs
 readr::write_excel_csv(delta_day_summary, "delta_day_summary.csv")
@@ -1280,24 +1315,6 @@ readr::write_excel_csv(delta_hour_summary, "delta_hour_summary.csv")
 readr::write_excel_csv(q_hour_summary, "q_hour_summary.csv")
 readr::write_excel_csv(e_CH4_hour_summary, "e_CH4_hour_summary.csv")
 readr::write_excel_csv(e_NH3_hour_summary, "e_NH3_hour_summary.csv")
-
-# Only ICC 
-delta_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != "baseline"),
-                           time.group = "day",
-                           vars = c("delta_CO2", "delta_CH4", "delta_NH3")) 
-
-q_icc_day <- icc_table(emission_reshaped  %>% filter(analyzer != "baseline"),
-                       time.group = "day",
-                       vars = "Q_vent")
-
-e_icc_day <- icc_table(emission_reshaped%>% filter(analyzer != c("FTIR.4", "baseline")),
-                       time.group = "day", 
-                       vars = c("e_CH4_ghLU", "e_NH3_ghLU"))
-
-# Save Day CSVs
-readr::write_excel_csv(delta_icc_day, "delta_icc_day.csv")
-readr::write_excel_csv(q_icc_day, "q_icc_day.csv")
-readr::write_excel_csv(e_icc_day, "e_icc_day.csv")
 
 ######## Absolute Concentration Plots ########
 c_boxplot <- emiboxplot(
@@ -1367,14 +1384,22 @@ q_e_trend_plot <- emitrendplot(
         y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU")
 )
 
+q_e_day_plot <- emitrendplot(
+        data = emission_reshaped,
+        x = "day",
+        y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU")
+)
+
 all_plots_vent <- list(
         q_e_boxplot   = q_e_boxplot,
-        q_e_trend_plot = q_e_trend_plot
+        q_e_trend_plot = q_e_trend_plot,
+        q_e_day_plot = q_e_day_plot
 )
 
 plot_sizes_vent <- list(
         q_e_boxplot   = c(8, 10),
-        q_e_trend_plot = c(16, 14))
+        q_e_trend_plot = c(16, 14),
+        q_e_day_plot = c(8, 10))
 
 for (plot_name in names(all_plots_vent)) {
         size <- plot_sizes_vent[[plot_name]]
