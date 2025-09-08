@@ -372,19 +372,18 @@ HSD_table <- function(data, group_var = "analyzer") {
         return(combined)
 }
 
-# Development of Linear mixed model function
+# Development of a Linear Mixed-Effects Model to test for interactions
 linear_mixed_model <- function(var_name, data) {
         library(lme4)
         library(broom.mixed)
         library(dplyr)
         library(stringr)
-        library(ggplot2)
         
-        # Ensure day column exists and is factor
+        # Ensure 'day' column exists and is a factor
         data <- data %>%
                 mutate(day = factor(as.Date(DATE.TIME)))
         
-        # Detect location from variable name
+        # Detect location from variable name to select correct predictors
         if (str_detect(var_name, "_in$")) {
                 location <- "in"
         } else if (str_detect(var_name, "_N$")) {
@@ -395,7 +394,7 @@ linear_mixed_model <- function(var_name, data) {
                 stop("Cannot detect location from variable name. Use _in, _N, or _S.")
         }
         
-        # Predictors
+        # Define predictor variables based on location
         temp_var <- ifelse(location == "in", "temp_in", "temp_N")
         rh_var   <- ifelse(location == "in", "RH_in", "RH_N")
         cows_var <- "n_dairycows_in"
@@ -405,53 +404,40 @@ linear_mixed_model <- function(var_name, data) {
         predictors <- c(temp_var, rh_var, wd_var, ws_var, cows_var)
         predictors <- predictors[predictors %in% colnames(data)]
         
+        # --- KEY CHANGE: MODIFIED FORMULA ---
+        # 'analyzer' is now a fixed effect, interacting (*) with the environmental predictors.
+        # This allows the model to estimate a different slope for each predictor for each analyzer.
+        # '(1 | day)' remains as a random intercept for day-to-day variability.
         formula <- as.formula(
-                paste(var_name, "~", paste(predictors, collapse = " + "), "+ (1 | analyzer) + (1 | day)")
+                paste(var_name, "~ (", paste(predictors, collapse = " + "), ") * analyzer + (1 | day)")
         )
         
         # Fit the model
         model <- lmer(formula, data = data, REML = TRUE)
         
-        # Fixed effects tibble
+        # Tidy the fixed effects table (this now includes the key interaction terms)
         fixed_tbl <- broom.mixed::tidy(model, effects = "fixed")
         
-        # Random effects
+        # Tidy the random effects for 'day'
         ranefs <- ranef(model)
-        analyzer_effects <- ranefs$analyzer %>%
-                mutate(analyzer = rownames(.)) %>%
-                rename(intercept_adj = `(Intercept)`) %>%
-                mutate(percent_dev = 100 * intercept_adj / mean(fixed_tbl$estimate[fixed_tbl$term=="(Intercept)"]))
-        
         day_effects <- ranefs$day %>%
                 mutate(day = rownames(.)) %>%
                 rename(intercept_adj = `(Intercept)`) %>%
                 mutate(percent_dev = 100 * intercept_adj / mean(fixed_tbl$estimate[fixed_tbl$term=="(Intercept)"]))
         
         # Print results
-        cat("\nFixed Effects:\n")
-        print(fixed_tbl)
-        cat("\nRandom Effects - Analyzer:\n")
-        print(analyzer_effects)
+        cat("\nFormula used:\n")
+        print(formula)
+        cat("\nFixed Effects (including interaction terms):\n")
+        print(fixed_tbl, n = 50) # Print more rows to see all interactions
         cat("\nRandom Effects - Day:\n")
         print(day_effects)
         
-        # Heatmap for analyzer deviations
-        heatmap_data <- analyzer_effects %>%
-                left_join(day_effects, by = character()) %>%
-                select(analyzer, day, percent_dev = percent_dev.y)
-        
-        ggplot(heatmap_data, aes(x = day, y = analyzer, fill = percent_dev)) +
-                geom_tile(color = "black") +
-                scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
-                labs(title = paste("Analyzer Deviation (%) for", var_name), x = "Day", y = "Analyzer") +
-                theme_classic() +
-                theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-        
+        # Return a list of results (plotting is removed)
         invisible(list(
                 formula = formula,
                 model_summary = summary(model),
                 fixed_effects = fixed_tbl,
-                random_effects_analyzer = analyzer_effects,
                 random_effects_day = day_effects
         ))
 }
@@ -1724,7 +1710,7 @@ for (plot_name in names(all_plots)) {
 ######## Linear mix modelling ##########
 colnames(emission_result)
 
-#emission_result <- emission_result %>% filter( analyzer != "FTIR.4")
+emission_result <- emission_result %>% filter( analyzer != "FTIR.4")
 
 # Delta CH4 North
 linear_mixed_model("delta_CH4_N", emission_result)
