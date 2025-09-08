@@ -1049,7 +1049,6 @@ bland_altman_plot <- function(data, var_filter, analyzer_pair, location_filter =
         return(p)
 }
 
-
 ######## Import Data #########
 # Read all gas data
 ATB_FTIR <- read.csv("20250408-14_ATB_wide_FTIR.1.csv")
@@ -1304,7 +1303,7 @@ readr::write_excel_csv(e_icc_day, "e_icc_day.csv")
 c_boxplot <- emiboxplot(
         data = concentration_reshaped,
         y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
-        plot_err = TRUE)
+        plot_err = FALSE)
 
 c_trend_plot <- emitrendplot(
         data = concentration_reshaped,
@@ -1332,7 +1331,7 @@ for (plot_name in names(all_plots_conc)) {
 d_boxplot <- emiboxplot(
         data = concentration_reshaped,
         y = c("delta_CO2", "delta_CH4", "delta_NH3"),
-        plot_err = TRUE)
+        plot_err = FALSE)
 
 d_trend_plot <- emitrendplot(
         data = concentration_reshaped,
@@ -1360,7 +1359,7 @@ for (plot_name in names(all_plots_delta)) {
 q_e_boxplot <- emiboxplot(
         data = emission_reshaped,
         y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
-        plot_err = TRUE
+        plot_err = FALSE
 )
 
 q_e_trend_plot <- emitrendplot(
