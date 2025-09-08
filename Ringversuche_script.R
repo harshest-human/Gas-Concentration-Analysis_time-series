@@ -834,13 +834,13 @@ emicorrgram <- function(data, target_variable, locations = NULL) {
                 labs(title = full_title_expr, x = NULL, y = NULL) +
                 theme_classic() +
                 theme(
-                        plot.title = element_text(hjust = 0.5),
-                        axis.text.x = element_text(angle = 45, hjust = 1),
-                        axis.text.y = element_text(angle = 45, hjust = 1),
+                        text = element_text(size = 12),
+                        plot.title = element_text(hjust = 0.5, size = 12),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+                        axis.text.y = element_text(angle = 45, hjust = 1, size = 12),
                         legend.position = "bottom",
                         panel.border = element_rect(colour = "black", fill = NA)
                 )
-        
         print(p)
         return(p)
 }
@@ -1562,12 +1562,12 @@ all_plots <- list(
 
 # Define custom sizes (width, height) for each plot
 plot_sizes <- list(
-        q_N_corrgram       = c(5, 6),
-        q_S_corrgram       = c(5, 6),
-        e_CH4_N_corrgram   = c(5, 6),
-        e_CH4_S_corrgram   = c(5, 6),
-        e_NH3_N_corrgram   = c(5, 6),
-        e_NH3_S_corrgram   = c(5, 6)
+        q_N_corrgram       = c(4, 5),
+        q_S_corrgram       = c(4, 5),
+        e_CH4_N_corrgram   = c(4, 5),
+        e_CH4_S_corrgram   = c(4, 5),
+        e_NH3_N_corrgram   = c(4, 5),
+        e_NH3_S_corrgram   = c(4, 5)
 )
 
 # Loop through and save each plot with its custom size
@@ -1606,12 +1606,57 @@ q_S_hour_heatmap <- emiheatmap(emission_hour_stat,
                                time.group = "hour",
                                location.filter = "South background")
 
+
+e_CH4_N_day_heatmap  <- emiheatmap(emission_day_stat,
+                               vars = "e_CH4_ghLU",
+                               time.group = "day",
+                               location.filter = "North background")
+
+e_CH4_S_day_heatmap  <- emiheatmap(emission_day_stat,
+                                   vars = "e_CH4_ghLU",
+                                   time.group = "day",
+                                   location.filter = "South background")
+
+e_CH4_N_hour_heatmap  <- emiheatmap(emission_hour_stat,
+                                   vars = "e_CH4_ghLU",
+                                   time.group = "hour",
+                                   location.filter = "North background")
+
+e_CH4_S_hour_heatmap  <- emiheatmap(emission_hour_stat,
+                                    vars = "e_CH4_ghLU",
+                                    time.group = "hour",
+                                    location.filter = "South background")
+
+e_NH3_S_day_heatmap  <- emiheatmap(emission_day_stat,
+                                   vars = "e_NH3_ghLU",
+                                   time.group = "day",
+                                   location.filter = "South background")
+
+e_NH3_N_hour_heatmap  <- emiheatmap(emission_hour_stat,
+                                    vars = "e_NH3_ghLU",
+                                    time.group = "hour",
+                                    location.filter = "North background")
+
+e_NH3_S_hour_heatmap  <- emiheatmap(emission_hour_stat,
+                                    vars = "e_NH3_ghLU",
+                                    time.group = "hour",
+                                    location.filter = "South background")
+
 # Combine all plots in a named list 
 all_plots <- list(
-        q_S_day_heatmap  = q_S_day_heatmap,
-        q_N_day_heatmap  = q_N_day_heatmap,
-        q_N_hour_heatmap = q_N_hour_heatmap,
-        q_S_hour_heatmap = q_S_hour_heatmap
+        q_S_day_heatmap    = q_S_day_heatmap,
+        q_N_day_heatmap    = q_N_day_heatmap,
+        q_N_hour_heatmap   = q_N_hour_heatmap,
+        q_S_hour_heatmap   = q_S_hour_heatmap,
+        
+        e_CH4_N_day_heatmap  = e_CH4_N_day_heatmap,
+        e_CH4_S_day_heatmap  = e_CH4_S_day_heatmap,
+        e_CH4_N_hour_heatmap = e_CH4_N_hour_heatmap,
+        e_CH4_S_hour_heatmap = e_CH4_S_hour_heatmap,
+        
+        e_NH3_S_day_heatmap  = e_NH3_S_day_heatmap,
+        e_NH3_N_hour_heatmap = e_NH3_N_hour_heatmap,
+        e_NH3_S_hour_heatmap = e_NH3_S_hour_heatmap
 )
 
 # Define custom sizes (width, height) for each plot
@@ -1619,7 +1664,16 @@ plot_sizes <- list(
         q_S_day_heatmap    = c(6, 4),
         q_N_day_heatmap    = c(6, 4),
         q_N_hour_heatmap   = c(12, 4),
-        q_S_hour_heatmap   = c(12, 4)
+        q_S_hour_heatmap   = c(12, 4),
+        
+        e_CH4_N_day_heatmap  = c(6, 4),
+        e_CH4_S_day_heatmap  = c(6, 4),
+        e_CH4_N_hour_heatmap = c(12, 4),
+        e_CH4_S_hour_heatmap = c(12, 4),
+        
+        e_NH3_S_day_heatmap  = c(6, 4),
+        e_NH3_N_hour_heatmap = c(12, 4),
+        e_NH3_S_hour_heatmap = c(12, 4)
 )
 
 # Loop through and save each plot with its custom size
@@ -1634,6 +1688,7 @@ for (plot_name in names(all_plots)) {
                 dpi = 300
         )
 }
+
 
 ######## Linear mix modelling ##########
 colnames(emission_result)
