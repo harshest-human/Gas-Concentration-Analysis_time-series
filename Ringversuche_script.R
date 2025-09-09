@@ -1181,7 +1181,7 @@ emission_hour_stat <- sd_cv_table(emission_reshaped,
 # Delta gases daily summary
 delta_day_summary <- emission_day_stat %>%
         filter(var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
-        group_by(day, analyzer, location, var) %>%
+        group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
@@ -1326,13 +1326,29 @@ d_trend_plot <- emitrendplot(
         data = concentration_reshaped,
         y = c("delta_CO2", "delta_CH4", "delta_NH3"))
 
+d_day_plot <- emitrendplot(
+        data = concentration_reshaped,
+        x = "day",
+        y = c("delta_CO2", "delta_CH4", "delta_NH3")
+)
+
+d_hour_plot <- emitrendplot(
+        data = concentration_reshaped,
+        x = "hour",
+        y = c("delta_CO2", "delta_CH4", "delta_NH3")
+)
+
 all_plots_delta <- list(
         d_boxplot   = d_boxplot,
-        d_trend_plot = d_trend_plot)
+        d_trend_plot = d_trend_plot,
+        d_day_plot = d_day_plot,
+        d_hour_plot = d_hour_plot)
 
 plot_sizes_delta <- list(
         d_boxplot   = c(8, 10),
-        d_trend_plot = c(16, 14))
+        d_trend_plot = c(16, 14),
+        d_day_plot = c(8, 10),
+        d_hour_plot = c(c(16, 9)))
 
 for (plot_name in names(all_plots_delta)) {
         size <- plot_sizes_delta[[plot_name]]
@@ -1362,16 +1378,24 @@ q_e_day_plot <- emitrendplot(
         y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU")
 )
 
+q_e_hour_plot <- emitrendplot(
+        data = emission_reshaped,
+        x = "hour",
+        y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU")
+)
+
 all_plots_vent <- list(
         q_e_boxplot   = q_e_boxplot,
         q_e_trend_plot = q_e_trend_plot,
-        q_e_day_plot = q_e_day_plot
+        q_e_day_plot = q_e_day_plot,
+        q_e_hour_plot = q_e_hour_plot
 )
 
 plot_sizes_vent <- list(
         q_e_boxplot   = c(8, 10),
         q_e_trend_plot = c(16, 14),
-        q_e_day_plot = c(8, 10))
+        q_e_day_plot = c(8, 10),
+        q_e_hour_plot = c(c(16, 9)))
 
 for (plot_name in names(all_plots_vent)) {
         size <- plot_sizes_vent[[plot_name]]
@@ -1383,7 +1407,6 @@ for (plot_name in names(all_plots_vent)) {
                 dpi = 300
         )
 }
-
 
 ######## Bland-Altman plot ############
 # Lab A
