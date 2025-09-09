@@ -206,11 +206,10 @@ sd_cv_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
         # ---- Summary statistics: mean, SD, CV ----
         result_df <- df_long %>%
                 group_by(across(all_of(time.group)), analyzer, location, var) %>%
-                summarise(
+                mutate(
                         mean_value = mean(value, na.rm = TRUE),
                         sd         = sd(value, na.rm = TRUE),
-                        cv         = DescTools::CoefVar(value, na.rm = TRUE) * 100,
-                        .groups    = "drop"
+                        cv         = DescTools::CoefVar(value, na.rm = TRUE) * 100
                 )
         
         # ---- Apply analyzer levels if provided ----
@@ -1166,24 +1165,29 @@ write_excel_csv(emission_HSD, "emission_HSD.csv")
 ######## SD and CV Summary #########
 emission_day_stat <- sd_cv_table(emission_reshaped,
                                  time.group = "day",
-                                 analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
-                                                    "CRDS.1", "CRDS.2", "CRDS.3", "baseline")) %>%
+                                 analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3",
+                                                    "CRDS.1", "CRDS.2", "CRDS.3",
+                                                    "baseline")) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 emission_hour_stat <- sd_cv_table(emission_reshaped,
                                   time.group = "hour",
-                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
-                                                     "CRDS.1", "CRDS.2", "CRDS.3", "baseline")) %>%
+                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3",
+                                                     "CRDS.1", "CRDS.2", "CRDS.3",
+                                                     "baseline")) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 # Delta gases daily summary
 delta_day_summary <- emission_day_stat %>%
         filter(var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
-        group_by(analyzer, location, var) %>%
+        group_by(day, analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 # Q ventilation daily summary
 q_day_summary <- emission_day_stat %>%
@@ -1192,7 +1196,10 @@ q_day_summary <- emission_day_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 # CH4 emission daily summary
 e_CH4_day_summary <- emission_day_stat %>%
@@ -1201,7 +1208,10 @@ e_CH4_day_summary <- emission_day_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 # NH3 emission daily summary
 e_NH3_day_summary <- emission_day_stat %>%
@@ -1211,7 +1221,10 @@ e_NH3_day_summary <- emission_day_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 # Delta gases daily summary
 delta_hour_summary <- emission_hour_stat %>%
@@ -1220,7 +1233,10 @@ delta_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 # Q ventilation daily summary
 q_hour_summary <- emission_hour_stat %>%
@@ -1229,7 +1245,10 @@ q_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 
 # CH4 emission daily summary
@@ -1239,7 +1258,10 @@ e_CH4_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 # NH3 emission daily summary
 e_NH3_hour_summary <- emission_hour_stat %>%
@@ -1249,7 +1271,10 @@ e_NH3_hour_summary <- emission_hour_stat %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var)
+                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 
 # Save Day CSVs
 readr::write_excel_csv(delta_day_summary, "delta_day_summary.csv")
