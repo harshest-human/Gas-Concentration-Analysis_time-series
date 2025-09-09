@@ -738,231 +738,192 @@ emitrendplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALS
 }
 
 # Development of function for correlogram
-emicorrgram <- function(data, target_variable, locations = NULL) {
+emicorrgram <- function(data, target_variables, locations = NULL) {
         library(dplyr)
         library(tidyr)
         library(ggplot2)
         library(Hmisc)
+        library(purrr)
         
-        # Step 1: Filter for the target variable
-        filtered <- data %>%
-                filter(var == target_variable) %>%
-                select(DATE.TIME, location, analyzer, value)
-        
-        # Step 2: Filter by user-selected locations if provided
-        if (!is.null(locations)) {
-                filtered <- filtered %>% filter(location %in% locations)
-        }
-        
-        # Step 3: Remove duplicates by averaging
-        filtered <- filtered %>%
-                group_by(DATE.TIME, location, analyzer) %>%
-                summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
-        
-        # Step 4: Pivot wider (each analyzer becomes a column)
-        pivoted <- filtered %>%
-                pivot_wider(
-                        names_from = analyzer,
-                        values_from = value,
-                        values_fn = function(x, ...) mean(x, na.rm = TRUE)
-                )
-        
-        # Step 5: Keep only numeric columns for correlation
-        subdata_num <- pivoted %>%
-                select(-DATE.TIME, -location) %>%
-                mutate(across(everything(), as.numeric))
-        
-        # Check there are at least 2 analyzers
-        if (ncol(subdata_num) < 2) {
-                stop("Need at least 2 analyzers with numeric data to compute correlations")
-        }
-        
-        # Step 6: Compute correlation and p-value
-        cor_res <- Hmisc::rcorr(as.matrix(subdata_num), type = "pearson")
-        cor_mat <- cor_res$r
-        p_mat <- cor_res$P
-        col_means <- colMeans(subdata_num, na.rm = TRUE)
-        
-        # Step 7: Prepare long-format data for plotting
-        cor_long <- expand.grid(Var1 = colnames(cor_mat),
-                                Var2 = colnames(cor_mat),
-                                stringsAsFactors = FALSE) %>%
-                mutate(
-                        correlation = as.vector(cor_mat),
-                        pvalue = as.vector(p_mat),
-                        mean_value = col_means[Var1],
-                        p_text = ifelse(pvalue > 0.05, "ns", "")
-                ) %>%
-                # Keep only lower triangle
-                filter(as.numeric(factor(Var1)) > as.numeric(factor(Var2)))
-        
-        # Step 8: Title labels (parsed)
-        title_labels_expr <- c(
-                "CO2_mgm3"     = "c[CO2]~'(mg '*m^-3*')'",
-                "CH4_mgm3"     = "c[CH4]~'(mg '*m^-3*')'",
-                "NH3_mgm3"     = "c[NH3]~'(mg '*m^-3*')'",
-                "r_CH4/CO2"    = "c[CH4]/c[CO2]~'('*'%'*')'",
-                "r_NH3/CO2"    = "c[NH3]/c[CO2]~'('*'%'*')'",
-                "delta_CO2"    = "Delta*c[CO2]~'(mg '*m^-3*')'",
-                "delta_CH4"    = "Delta*c[CH4]~'(mg '*m^-3*')'",
-                "delta_NH3"    = "Delta*c[NH3]~'(mg '*m^-3*')'",
-                "Q_vent"       = "Q~'('*m^3~h^-1~LU^-1*')'",
-                "e_CH4_gh"     = "e[CH4]~'(g '*h^-1*')'",
-                "e_NH3_gh"     = "e[NH3]~'(g '*h^-1*')'",
-                "e_CH4_ghLU"   = "e[CH4]~'(g '*h^-1~LU^-1*')'",
-                "e_NH3_ghLU"   = "e[NH3]~'(g '*h^-1~LU^-1*')'",
-                "temp"         = "Temperature " ~ "(°C)",
-                "RH"           = "Relative Humidity " ~ "(%)",
-                "ws_mst"       = "Wind Speed Mast " ~ "(m " *s^-1* ")",
-                "wd_mst"       = "Wind Diection Mast " ~ "(°)",
-                "wd_trv"       = "Wind Direction Traverse " ~ "(°)",
-                "ws_trv"       = "Wind Speed Traverse " ~ "(m " *s^-1* ")",
-                "n_dairycows"  = "'Number of Cows'"
+        # Parsed labels for facets
+        facet_labels_expr <- c(
+                "CO2_mgm3"     = "c[CO2]",
+                "CH4_mgm3"     = "c[CH4]",
+                "NH3_mgm3"     = "c[NH3]",
+                "delta_CO2"    = "Delta*c[CO2]",
+                "delta_CH4"    = "Delta*c[CH4]",
+                "delta_NH3"    = "Delta*c[NH3]",
+                "Q_vent"       = "Q",
+                "e_CH4_gh"     = "e[CH4]",
+                "e_NH3_gh"     = "e[NH3]",
+                "e_CH4_ghLU"   = "e[CH4]",
+                "e_NH3_ghLU"   = "e[NH3]"
         )
         
-        # Build title: variable label + location
-        title_label <- if (target_variable %in% names(title_labels_expr)) {
-                title_labels_expr[[target_variable]]
-        } else {
-                target_variable
+        # Helper function to compute correlation for one variable & location
+        compute_corr <- function(var_sel, loc_sel) {
+                filtered <- data %>%
+                        filter(var == var_sel) %>%
+                        select(DATE.TIME, location, analyzer, value)
+                
+                if (!is.null(loc_sel)) {
+                        filtered <- filtered %>% filter(location %in% loc_sel)
+                }
+                
+                filtered <- filtered %>%
+                        group_by(DATE.TIME, location, analyzer) %>%
+                        summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
+                
+                pivoted <- filtered %>%
+                        pivot_wider(names_from = analyzer, values_from = value,
+                                    values_fn = function(x, ...) mean(x, na.rm = TRUE))
+                
+                subdata_num <- pivoted %>%
+                        select(-DATE.TIME, -location) %>%
+                        mutate(across(everything(), as.numeric))
+                
+                if (ncol(subdata_num) < 2) return(NULL)
+                
+                cor_res <- Hmisc::rcorr(as.matrix(subdata_num), type = "pearson")
+                cor_mat <- cor_res$r
+                p_mat <- cor_res$P
+                
+                cor_long <- expand.grid(
+                        Var1 = colnames(cor_mat),
+                        Var2 = colnames(cor_mat),
+                        stringsAsFactors = FALSE
+                ) %>%
+                        mutate(
+                                correlation = as.vector(cor_mat),
+                                pvalue = as.vector(p_mat),
+                                target_variable = var_sel,
+                                location = loc_sel
+                        ) %>%
+                        filter(as.numeric(factor(Var1)) > as.numeric(factor(Var2)))
+                
+                return(cor_long)
         }
         
-        location_name <- if (!is.null(locations)) {
-                paste(locations, collapse = ", ")
-        } else {
-                unique(filtered$location)
-        }
+        # Loop over variables and locations
+        corr_df <- map_df(target_variables, function(tv) {
+                map_df(locations, function(loc) compute_corr(tv, loc))
+        })
         
-        # Parse expression for ggplot
-        full_title_expr <- parse(text = paste0(title_label, " ~ '(' ~ '", location_name, "' ~ ')'"))
+        # Add parsed facet labels
+        corr_df <- corr_df %>%
+                mutate(
+                        facet_label = factor(
+                                facet_labels_expr[target_variable],
+                                levels = facet_labels_expr[target_variables]
+                        )
+                )
         
-        # Step 9: Plot
-        p <- ggplot(cor_long, aes(x = Var1, y = Var2, fill = correlation)) +
+        # Plot
+        p <- ggplot(corr_df, aes(x = Var1, y = Var2, fill = correlation)) +
                 geom_tile(color = "white") +
                 geom_text(aes(label = paste0(
                         round(correlation, 2),
                         ifelse(pvalue <= 0.001, "\n***",
                                ifelse(pvalue <= 0.01, "\n**",
                                       ifelse(pvalue <= 0.05, "\n*", "\nns")))
-                )),
-                size = 4, color = "black") +
-                scale_y_discrete(position = "right") + 
+                )), size = 3, color = "white") +
+                scale_y_discrete(position = "right") +
                 scale_fill_gradientn(
-                        colors = c("darkred","red","orange2","gold2","yellow","greenyellow","green1","green3","darkgreen"),
+                        colors = c("darkred","red","orange2","gold2","yellow",
+                                   "greenyellow","green1","green3","darkgreen"),
                         limits = c(0,1),
                         name = "PCC"
                 ) +
-                labs(title = full_title_expr, x = NULL, y = NULL) +
+                facet_grid(location ~ facet_label, scales = "free", space = "free", switch = "y",
+                           labeller = labeller(facet_label = label_parsed)) +
                 theme_classic() +
                 theme(
-                        text = element_text(size = 12),
-                        plot.title = element_text(hjust = 0.5, size = 12),
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-                        axis.text.y = element_text(angle = 45, hjust = 1, size = 12),
+                        axis.title = element_blank(),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+                        axis.text.y = element_text(angle = 45, hjust = 1, size = 10),
                         legend.position = "bottom",
+                        strip.text = element_text(size = 12),
                         panel.border = element_rect(colour = "black", fill = NA)
                 )
+        
         print(p)
         return(p)
 }
 
 # Development of function cv emiheatmap
-emiheatmap <- function(stat_df, vars = NULL, time.group = "hour", location.filter = NULL) {
-        library(dplyr)
+emiheatmap <- function(data, vars, time.group, locations = c("North background", "South background")) {
+        
         library(ggplot2)
+        library(dplyr)
         
-        df <- stat_df
+        # --- 1. Filter the data for the specified variable and locations ---
+        df_filtered <- data %>%
+                filter(var %in% vars, location %in% locations)
         
-        # Filter by variable(s) if requested
-        if (!is.null(vars) && "var" %in% colnames(df)) {
-                df <- df %>% filter(var %in% vars)
+        if (nrow(df_filtered) == 0) {
+                warning(paste("No data found for the specified criteria. Returning empty plot."))
+                return(ggplot() + theme_void() + ggtitle("No data available"))
         }
         
-        # Filter by location if requested
-        if (!is.null(location.filter) && "location" %in% colnames(df)) {
-                df <- df %>% filter(location %in% location.filter)
-        }
-        
-        # Create hour/day if needed
-        if (!"hour" %in% colnames(df) & "DATE.TIME" %in% colnames(df)) {
-                df <- df %>% mutate(hour = format(DATE.TIME, "%H"))
-        }
-        if (!"day" %in% colnames(df) & "DATE.TIME" %in% colnames(df)) {
-                df <- df %>% mutate(day = format(DATE.TIME, "%Y-%m-%d"))
-        }
-        
-        # Ensure analyzer is factor for y-axis
-        df$analyzer <- factor(df$analyzer, levels = unique(df$analyzer))
-        
-        # Title expressions (same as in emicorrgram)
+        # --- 2. Generate the new, simplified facet label ---
         title_labels_expr <- c(
-                "CO2_mgm3"     = "c[CO2]~'(mg '*m^-3*')'",
-                "CH4_mgm3"     = "c[CH4]~'(mg '*m^-3*')'",
-                "NH3_mgm3"     = "c[NH3]~'(mg '*m^-3*')'",
-                "r_CH4/CO2"    = "c[CH4]/c[CO2]~'('*'%'*')'",
-                "r_NH3/CO2"    = "c[NH3]/c[CO2]~'('*'%'*')'",
-                "delta_CO2"    = "Delta*c[CO2]~'(mg '*m^-3*')'",
-                "delta_CH4"    = "Delta*c[CH4]~'(mg '*m^-3*')'",
-                "delta_NH3"    = "Delta*c[NH3]~'(mg '*m^-3*')'",
-                "Q_vent"       = "Q~'('*m^3~h^-1~LU^-1*')'",
-                "e_CH4_gh"     = "e[CH4]~'(g '*h^-1*')'",
-                "e_NH3_gh"     = "e[NH3]~'(g '*h^-1*')'",
-                "e_CH4_ghLU"   = "e[CH4]~'(g '*h^-1~LU^-1*')'",
-                "e_NH3_ghLU"   = "e[NH3]~'(g '*h^-1~LU^-1*')'",
-                "temp"         = "Temperature " ~ "(°C)",
-                "RH"           = "Relative Humidity " ~ "(%)",
-                "ws_mst"       = "Wind Speed Mast " ~ "(m " *s^-1* ")",
-                "wd_mst"       = "Wind Diection Mast " ~ "(°)",
-                "wd_trv"       = "Wind Direction Traverse " ~ "(°)",
-                "ws_trv"       = "Wind Speed Traverse " ~ "(m " *s^-1* ")",
-                "n_dairycows"  = "'Number of Cows'"
+                "Q_vent"     = "Q",
+                "e_CH4_ghLU" = "e[CH4]",
+                "e_NH3_ghLU" = "e[NH3]"
         )
         
-        # Pick target variable(s) for title
-        target_var <- if (!is.null(vars)) vars[1] else unique(df$var)[1]
-        
-        # Build title label
-        title_label <- if (target_var %in% names(title_labels_expr)) {
-                title_labels_expr[[target_var]]
+        title_label <- if (vars %in% names(title_labels_expr)) {
+                title_labels_expr[[vars]]
         } else {
-                target_var
+                vars
         }
         
-        # Add location info
-        location_name <- if (!is.null(location.filter)) {
-                paste(location.filter, collapse = ", ")
-        } else if ("location" %in% colnames(df)) {
-                paste(unique(df$location), collapse = ", ")
+        # New label format: "var ~ by ~ (location)"
+        df_prepared <- df_filtered %>%
+                mutate(
+                        facet_label_str = paste0(title_label, " ~ '(", location, ")'")
+                )
+        
+        # --- 3. Create an ordered factor for facets to control plot order ---
+        facet_order <- paste0(title_label, " ~ '(", locations, ")'")
+        df_prepared$facet_label <- factor(df_prepared$facet_label_str, levels = facet_order)
+        
+        # --- 4. Determine facet layout based on time.group ---
+        if (time.group == "day") {
+                facet_cols <- length(locations) # Arrange side-by-side
+                facet_rows <- 1
+        } else if (time.group == "hour") {
+                facet_cols <- 1                 # Stack vertically
+                facet_rows <- length(locations)
         } else {
-                ""
+                stop("time.group must be either 'day' or 'hour'")
         }
         
-        # Parse full title expression
-        full_title_expr <- parse(text = paste0(title_label, " ~ '(' ~ '", location_name, "' ~ ')'"))
-        
-        # Plot heatmap
-        p <- ggplot(df, aes_string(x = time.group, y = "analyzer", fill = "cv")) +
+        # --- 5. Create the final faceted plot ---
+        p <- ggplot(df_prepared, aes(x = .data[[time.group]], y = analyzer, fill = cv)) +
                 geom_tile(color = "white") +
-                geom_text(aes(label = paste0(round(cv, 1))), size = 3, color = "black") +
+                geom_text(aes(label = ifelse(is.na(cv), "", round(cv, 1))), size = 3, color = "black") +
                 scale_fill_gradientn(
-                        colors = c("darkgreen","green4","green2","yellow","orange","red","darkred"),
+                        colors = c("darkgreen", "green4", "green2", "yellow", "orange", "red", "darkred"),
                         limits = c(0, 150),
                         breaks = seq(0, 150, by = 10),
                         name = "CV (%)",
                         na.value = "grey80"
                 ) +
-                labs(x = time.group, y = "Analyzer", title = full_title_expr) +
+                scale_y_discrete(position = "right") +
+                facet_wrap(~ facet_label, ncol = facet_cols, nrow = facet_rows, 
+                           scales = "free", labeller = label_parsed) +
+                labs(x = NULL, y = NULL) +
                 theme_classic() +
-                theme(axis.text.x = element_text(
-                        size = 12, 
-                        angle = 45, 
-                        hjust = 1),
-                      axis.text.y = element_text(size = 12),
-                      panel.grid = element_blank(),
-                      legend.position = "bottom",
-                      legend.key.width = unit(2, "cm"),
-                      panel.border = element_rect(color = "black", fill = NA),
-                      plot.title = element_text(hjust = 0.5)
+                theme(
+                        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+                        axis.text.y = element_text(size = 10),
+                        strip.text = element_text(size = 10),
+                        strip.background = element_rect(fill = "white", color = "black"),
+                        panel.border = element_rect(color = "black", fill = NA),
+                        legend.position = "bottom",
+                        legend.key.width = unit(2.5, "cm"),
+                        plot.margin = margin(t = 5, r = 10, b = 5, l = 25, unit = "pt")
                 )
         
         print(p)
@@ -1400,312 +1361,195 @@ for (plot_name in names(all_plots_vent)) {
 
 
 ######## Bland-Altman plot ############
-#Compare FTIR.1 vs CRDS.1 for delta_CH4 at "North background"
-delta_CH4_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CH4",
-                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
-                                             location_filter = "North background")
+# Lab A
+e_CH4_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_CH4_ghLU",
+                                         analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                         location_filter = "North background")
 
-#Compare FTIR.1 vs CRDS.1 for delta_CH4 at "South background"
-delta_CH4_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CH4",
-                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
-                                             location_filter = "South background")
+e_CH4_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_CH4_ghLU",
+                                         analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                         location_filter = "South background")
 
-#Compare FTIR.1 vs CRDS.1 for delta_CO2 at "North background"
-delta_CO2_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CO2",
-                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
-                                             location_filter = "North background")
+e_NH3_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_NH3_ghLU",
+                                         analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                         location_filter = "North background")
 
-#Compare FTIR.1 vs CRDS.1 for delta_CO2 at "South background"
-delta_CO2_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CO2",
-                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
-                                             location_filter = "South background")
+e_NH3_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_NH3_ghLU",
+                                         analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                         location_filter = "South background")
 
-#Compare FTIR.1 vs CRDS.1 for delta_NH3 at "North background"
-delta_NH3_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_NH3",
-                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
-                                             location_filter = "North background")
+q_N_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                     var_filter = "Q_vent",
+                                     analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                     location_filter = "North background")
 
-#Compare FTIR.1 vs CRDS.1 for delta_NH3 at "South background"
-delta_NH3_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_NH3",
-                                             analyzer_pair = c("FTIR.1", "CRDS.1"),
-                                             location_filter = "South background")
+q_S_A_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                     var_filter = "Q_vent",
+                                     analyzer_pair = c("FTIR.1", "CRDS.1"),
+                                     location_filter = "South background")
 
-#save plots
-# Add some margins to each plot
+# Save multiple plots as one pdf
 plots_list_A <- list(
-        delta_CH4_N_A_blandplot, delta_CO2_N_A_blandplot, delta_NH3_N_A_blandplot,
-        delta_CH4_S_A_blandplot, delta_CO2_S_A_blandplot, delta_NH3_S_A_blandplot)
+        e_CH4_N_A_blandplot, e_NH3_N_A_blandplot,
+        e_CH4_S_A_blandplot, e_NH3_S_A_blandplot)
 
 plots_list_A <- lapply(plots_list_A, function(p) p + theme(plot.margin = margin(10, 10, 10, 10)))
 
-# Combine with 3 columns × 2 rows
-plots_A <- wrap_plots(plots_list_A, ncol = 3, nrow = 2)
+# Arrange in 1 row × 4 columns
+plots_A <- wrap_plots(plots_list_A, ncol = 4, nrow = 1)
 
-ggsave("BlandAltman_AnalyzerA.pdf", plot = plots_A, width = 12, height = 6, units = "in", dpi = 300)
+ggsave("e_BlandAltman_AnalyzerA.pdf", plot = plots_A,
+       width = 16, height = 4, units = "in", dpi = 300)
 
-#Compare FTIR.2 vs CRDS.2 for delta_CH4 at "North background"
-delta_CH4_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CH4",
-                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
-                                             location_filter = "North background")
+# Save multiple plots as one pdf
+plots_list_A_Q <- list(
+        q_N_A_blandplot, q_S_A_blandplot)
 
-#Compare FTIR.2 vs CRDS.2 for delta_CH4 at "South background"
-delta_CH4_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CH4",
-                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
-                                             location_filter = "South background")
+plots_list_A_Q <- lapply(plots_list_A_Q, function(p) p + theme(plot.margin = margin(10, 10, 10, 10)))
 
-#Compare FTIR.2 vs CRDS.2 for delta_CO2 at "North background"
-delta_CO2_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CO2",
-                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
-                                             location_filter = "North background")
+plots_A_Q <- wrap_plots(plots_list_A_Q, ncol = 2, nrow = 1)
 
-#Compare FTIR.2 vs CRDS.2 for delta_CO2 at "South background"
-delta_CO2_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_CO2",
-                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
-                                             location_filter = "South background")
+ggsave("q_BlandAltman_AnalyzerA.pdf", plot = plots_A_Q,
+       width = 10, height = 4, units = "in", dpi = 300)
 
-#Compare FTIR.2 vs CRDS.2 for delta_NH3 at "North background"
-delta_NH3_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_NH3",
-                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
-                                             location_filter = "North background")
 
-#Compare FTIR.2 vs CRDS.2 for delta_NH3 at "South background"
-delta_NH3_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
-                                             var_filter = "delta_NH3",
-                                             analyzer_pair = c("FTIR.2", "CRDS.2"),
-                                             location_filter = "South background")
+# Lab B
+e_CH4_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_CH4_ghLU",
+                                         analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                         location_filter = "North background")
 
-# Save plots
-# Add some margins to each plot
+e_CH4_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_CH4_ghLU",
+                                         analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                         location_filter = "South background")
+
+e_NH3_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_NH3_ghLU",
+                                         analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                         location_filter = "North background")
+
+e_NH3_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                         var_filter = "e_NH3_ghLU",
+                                         analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                         location_filter = "South background")
+
+q_N_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                     var_filter = "Q_vent",
+                                     analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                     location_filter = "North background")
+
+q_S_B_blandplot <- bland_altman_plot(data = emission_reshaped,
+                                     var_filter = "Q_vent",
+                                     analyzer_pair = c("FTIR.2", "CRDS.2"),
+                                     location_filter = "South background")
+
+
+# Save multiple plots as one pdf
 plots_list_B <- list(
-        delta_CH4_N_B_blandplot, delta_CO2_N_B_blandplot, delta_NH3_N_B_blandplot,
-        delta_CH4_S_B_blandplot, delta_CO2_S_B_blandplot, delta_NH3_S_B_blandplot)
+        e_CH4_N_B_blandplot, e_NH3_N_B_blandplot,
+        e_CH4_S_B_blandplot, e_NH3_S_B_blandplot)
 
 plots_list_B <- lapply(plots_list_B, function(p) p + theme(plot.margin = margin(10, 10, 10, 10)))
 
-# Combine with 3 columns × 2 rows
-plots_B <- wrap_plots(plots_list_B, ncol = 3, nrow = 2)
+plots_B <- wrap_plots(plots_list_B, ncol = 4, nrow = 1)
 
-ggsave("BlandAltman_AnalyzerB.pdf", plot = plots_B, width = 12, height = 6, units = "in", dpi = 300)
+ggsave("e_BlandAltman_AnalyzerB.pdf", plot = plots_B,
+       width = 16, height = 4, units = "in", dpi = 300)
+
+# Save multiple plots as one pdf
+plots_list_B_Q <- list(
+        q_N_B_blandplot, q_S_B_blandplot)
+
+plots_list_B_Q <- lapply(plots_list_B_Q, function(p) p + theme(plot.margin = margin(10, 10, 10, 10)))
+
+plots_B_Q <- wrap_plots(plots_list_B_Q, ncol = 2, nrow = 1)
+
+ggsave("q_BlandAltman_AnalyzerB.pdf", plot = plots_B_Q,
+       width = 10, height = 4, units = "in", dpi = 300)
+
+
 ######## Correlograms #######
-# North background
-d_CO2_N_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "delta_CO2", 
-        locations = "North background")
+q_e_corrgram <- emicorrgram(emission_reshaped,
+        target_variables = c("e_CH4_ghLU", "e_NH3_ghLU", "Q_vent"),
+        locations = c("North background", "South background"))
 
-d_CH4_N_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "delta_CH4",
-        locations = "North background")
-
-d_NH3_N_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "delta_NH3",
-        locations = "North background")
-
-q_N_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "Q_vent", 
-        locations = "North background")
-
-e_CH4_N_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "e_CH4_ghLU", 
-        locations = "North background")
-
-e_NH3_N_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "e_NH3_ghLU", 
-        locations = "North background")
-
-# South background
-d_CO2_S_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "delta_CO2", 
-        locations = "South background")
-
-d_CH4_S_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "delta_CH4",
-        locations = "South background")
-
-d_NH3_S_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "delta_NH3",
-        locations = "South background")
-
-q_S_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "Q_vent", 
-        locations = "South background")
-
-e_CH4_S_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "e_CH4_ghLU", 
-        locations = "South background")
-
-e_NH3_S_corrgram <- emicorrgram(
-        emission_reshaped,
-        target_variable = "e_NH3_ghLU", 
-        locations = "South background")
-
-# Combine all plots in a named list 
-all_plots <- list(
-        q_N_corrgram      = q_N_corrgram,
-        q_S_corrgram      = q_S_corrgram,
-        e_CH4_N_corrgram  = e_CH4_N_corrgram,
-        e_CH4_S_corrgram  = e_CH4_S_corrgram,
-        e_NH3_N_corrgram  = e_NH3_N_corrgram,
-        e_NH3_S_corrgram  = e_NH3_S_corrgram
-)
-
-# Define custom sizes (width, height) for each plot
-plot_sizes <- list(
-        q_N_corrgram       = c(4, 5),
-        q_S_corrgram       = c(4, 5),
-        e_CH4_N_corrgram   = c(4, 5),
-        e_CH4_S_corrgram   = c(4, 5),
-        e_NH3_N_corrgram   = c(4, 5),
-        e_NH3_S_corrgram   = c(4, 5)
-)
-
-# Loop through and save each plot with its custom size
-for (plot_name in names(all_plots)) {
-        size <- plot_sizes[[plot_name]]
-        
-        ggsave(
-                filename = paste0(plot_name, ".pdf"),
-                plot = all_plots[[plot_name]],
-                width = size[1],
-                height = size[2],
-                dpi = 300
-        )
-}
+ggsave("q_e_corrgram.pdf", plot = q_e_corrgram,
+       width = 10, height = 6, units = "in", dpi = 300)
 
 ######## Heatmap #########
 # Daily heatmaps
-q_S_day_heatmap  <- emiheatmap(emission_day_stat,
-                               vars = "Q_vent",
-                               time.group = "day",
-                               location.filter = "South background")
+q_day_heatmap <- emiheatmap(
+        data = emission_day_stat,
+        vars = "Q_vent", 
+        time.group = "day")
 
-q_N_day_heatmap  <- emiheatmap(emission_day_stat,
-                               vars = "Q_vent",
-                               time.group = "day",
-                               location.filter = "North background")
+e_CH4_day_heatmap <- emiheatmap(
+        data = emission_day_stat,
+        vars = "e_CH4_ghLU",
+        time.group = "day")
+
+e_NH3_day_heatmap <- emiheatmap(
+        data = emission_day_stat,
+        vars = "e_NH3_ghLU",
+        time.group = "day")
 
 # Hourly heatmaps
-q_N_hour_heatmap <- emiheatmap(emission_hour_stat,
-                               vars = "Q_vent",
-                               time.group = "hour",
-                               location.filter = "North background")
+q_hour_heatmap <- emiheatmap(
+        data = emission_hour_stat,
+        vars = "Q_vent", 
+        time.group = "hour")
 
-q_S_hour_heatmap <- emiheatmap(emission_hour_stat,
-                               vars = "Q_vent",
-                               time.group = "hour",
-                               location.filter = "South background")
+e_CH4_hour_heatmap <- emiheatmap(
+        data = emission_hour_stat,
+        vars = "e_CH4_ghLU",
+        time.group = "hour")
+
+e_NH3_hour_heatmap <- emiheatmap(
+        data = emission_hour_stat,
+        vars = "e_NH3_ghLU",
+        time.group = "hour")
 
 
-e_CH4_N_day_heatmap  <- emiheatmap(emission_day_stat,
-                               vars = "e_CH4_ghLU",
-                               time.group = "day",
-                               location.filter = "North background")
-
-e_CH4_S_day_heatmap  <- emiheatmap(emission_day_stat,
-                                   vars = "e_CH4_ghLU",
-                                   time.group = "day",
-                                   location.filter = "South background")
-
-e_CH4_N_hour_heatmap  <- emiheatmap(emission_hour_stat,
-                                   vars = "e_CH4_ghLU",
-                                   time.group = "hour",
-                                   location.filter = "North background")
-
-e_CH4_S_hour_heatmap  <- emiheatmap(emission_hour_stat,
-                                    vars = "e_CH4_ghLU",
-                                    time.group = "hour",
-                                    location.filter = "South background")
-
-e_NH3_N_day_heatmap  <- emiheatmap(emission_day_stat,
-                                   vars = "e_NH3_ghLU",
-                                   time.group = "day",
-                                   location.filter = "North background")
-
-e_NH3_S_day_heatmap  <- emiheatmap(emission_day_stat,
-                                   vars = "e_NH3_ghLU",
-                                   time.group = "day",
-                                   location.filter = "South background")
-
-e_NH3_N_hour_heatmap  <- emiheatmap(emission_hour_stat,
-                                    vars = "e_NH3_ghLU",
-                                    time.group = "hour",
-                                    location.filter = "North background")
-
-e_NH3_S_hour_heatmap  <- emiheatmap(emission_hour_stat,
-                                    vars = "e_NH3_ghLU",
-                                    time.group = "hour",
-                                    location.filter = "South background")
-
-# Combine all plots in a named list 
+# 1. Combine all plots in a named list
 all_plots <- list(
-        q_S_day_heatmap    = q_S_day_heatmap,
-        q_N_day_heatmap    = q_N_day_heatmap,
-        q_N_hour_heatmap   = q_N_hour_heatmap,
-        q_S_hour_heatmap   = q_S_hour_heatmap,
-        
-        e_CH4_N_day_heatmap  = e_CH4_N_day_heatmap,
-        e_CH4_S_day_heatmap  = e_CH4_S_day_heatmap,
-        e_CH4_N_hour_heatmap = e_CH4_N_hour_heatmap,
-        e_CH4_S_hour_heatmap = e_CH4_S_hour_heatmap,
-        
-        e_NH3_N_day_heatmap  = e_NH3_N_day_heatmap,
-        e_NH3_S_day_heatmap  = e_NH3_S_day_heatmap,
-        e_NH3_N_hour_heatmap = e_NH3_N_hour_heatmap,
-        e_NH3_S_hour_heatmap = e_NH3_S_hour_heatmap
+        q_day_heatmap    = q_day_heatmap,
+        q_hour_heatmap   = q_hour_heatmap,
+        e_CH4_day_heatmap  = e_CH4_day_heatmap,
+        e_CH4_hour_heatmap = e_CH4_hour_heatmap,
+        e_NH3_day_heatmap  = e_NH3_day_heatmap,
+        e_NH3_hour_heatmap = e_NH3_hour_heatmap
 )
 
-# Define custom sizes (width, height) for each plot
+# 2. Define custom sizes that match the names in `all_heatmaps`
 plot_sizes <- list(
-        q_S_day_heatmap    = c(4,4),
-        q_N_day_heatmap    = c(4,4),
-        q_N_hour_heatmap   = c(12, 4),
-        q_S_hour_heatmap   = c(12, 4),
-        
-        e_CH4_N_day_heatmap  = c(4,4),
-        e_CH4_S_day_heatmap  = c(4,4),
-        e_CH4_N_hour_heatmap = c(12, 4),
-        e_CH4_S_hour_heatmap = c(12, 4),
-        
-        e_NH3_N_day_heatmap  = c(4,4),
-        e_NH3_S_day_heatmap  = c(4,4),
-        e_NH3_N_hour_heatmap = c(12, 4),
-        e_NH3_S_hour_heatmap = c(12, 4)
+        q_day_heatmap      = c(6, 4),
+        q_hour_heatmap     = c(8, 6),
+        e_CH4_day_heatmap  = c(6, 4),
+        e_CH4_hour_heatmap = c(8, 6),
+        e_NH3_day_heatmap  = c(6, 4),
+        e_NH3_hour_heatmap = c(8, 6)
 )
 
-# Loop through and save each plot with its custom size
+# 3. Loop through the lists and save each plot with its custom size
 for (plot_name in names(all_plots)) {
         size <- plot_sizes[[plot_name]]
         
+        # Save the plot
         ggsave(
                 filename = paste0(plot_name, ".pdf"),
                 plot = all_plots[[plot_name]],
-                width = size[1],
+                width = size[1],  
                 height = size[2],
                 dpi = 300
         )
+        
+        message("Saved: ", paste0(plot_name, ".pdf"))
 }
-
 
 ######## Linear mix modelling ##########
 colnames(emission_result)
