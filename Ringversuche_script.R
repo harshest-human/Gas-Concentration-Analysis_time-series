@@ -1172,6 +1172,13 @@ write_excel_csv(concentration_HSD, "concentration_HSD.csv")
 write_excel_csv(emission_HSD, "emission_HSD.csv")
 
 ######## Statistical Summary #########
+concentration_day_stat <- stat_table(concentration_reshaped,
+                                time.group = "day",
+                                analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
+                                                   "CRDS.1", "CRDS.2", "CRDS.3",
+                                                   "baseline")) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
 emission_day_stat <- stat_table(emission_reshaped,
                                  time.group = "day",
                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3",
@@ -1188,10 +1195,11 @@ emission_hour_stat <- stat_table(emission_reshaped,
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 # Absolute gases summary
-absolute_day_summary <- emission_day_stat %>%
+absolute_day_summary <- concentration_day_stat %>%
         filter(var %in% c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3")) %>%
         group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
+                  median     = mean(median, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
                   mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
@@ -1199,10 +1207,11 @@ absolute_day_summary <- emission_day_stat %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 # Delta gases summary
-delta_day_summary <- emission_day_stat %>%
+delta_day_summary <- concentration_day_stat %>%
         filter(var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
         group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
+                  median     = mean(median, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
                   mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
@@ -1214,6 +1223,7 @@ q_day_summary <- emission_day_stat %>%
         filter(var == "Q_vent") %>%
         group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
+                  median     = mean(median, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
                   mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
@@ -1226,6 +1236,7 @@ e_CH4_day_summary <- emission_day_stat %>%
         filter(var == "e_CH4_ghLU") %>%
         group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
+                  median     = mean(median, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
                   mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
@@ -1235,10 +1246,10 @@ e_CH4_day_summary <- emission_day_stat %>%
 
 # NH3 emission summary
 e_NH3_day_summary <- emission_day_stat %>%
-        filter(analyzer == "baseline",
-               var == "e_NH3_ghLU") %>%
+        filter(var == "e_NH3_ghLU") %>%
         group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
+                  median     = mean(median, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
                   mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
@@ -1247,6 +1258,7 @@ e_NH3_day_summary <- emission_day_stat %>%
 
 
 # Save Day CSVs
+readr::write_excel_csv(absolute_day_summary, "absolute_day_summary.csv")
 readr::write_excel_csv(delta_day_summary, "delta_day_summary.csv")
 readr::write_excel_csv(q_day_summary, "q_day_summary.csv")
 readr::write_excel_csv(e_CH4_day_summary, "e_CH4_day_summary.csv")
