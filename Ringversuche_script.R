@@ -189,8 +189,8 @@ reshaper <- function(df) {
         return(df_long)
 }
 
-# Development of function stat_table to calculate SD, and CV
-sd_cv_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
+# Development of function stat_table to calculate summary statistics and RE
+stat_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
         # Load required libraries
         library(dplyr)
         library(DescTools)
@@ -203,25 +203,37 @@ sd_cv_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
                 df_long <- df_long %>% mutate(hour = format(DATE.TIME, "%H"))
         }
         
-        # ---- Summary statistics: mean, SD, CV ----
-        result_df <- df_long %>%
-                group_by(across(all_of(time.group)), analyzer, location, var) %>%
+        # ---- Compute relative error vs baseline ----
+        df_long <- df_long %>%
+                group_by(DATE.TIME, location, var) %>%
                 mutate(
-                        mean_value = mean(value, na.rm = TRUE),
-                        sd         = sd(value, na.rm = TRUE),
-                        cv         = DescTools::CoefVar(value, na.rm = TRUE) * 100
-                )
+                        baseline_value = value[analyzer == "baseline"],
+                        pct_err = 100 * (value - baseline_value) / baseline_value
+                ) %>%
+                ungroup() %>%
+                select(-baseline_value)
         
         # ---- Apply analyzer levels if provided ----
         if (!is.null(analyzer.levels)) {
-                result_df <- result_df %>%
+                df_long <- df_long %>%
                         mutate(analyzer = factor(analyzer, levels = analyzer.levels)) %>%
                         filter(analyzer %in% analyzer.levels)
         }
         
-        # ---- Return arranged result ----
-        return(result_df %>%
-                       arrange(across(all_of(time.group)), location, var, analyzer))
+        # ---- Summary statistics: mean, median, SD, CV, pct_err ----
+        result_df <- df_long %>%
+                group_by(across(all_of(time.group)), analyzer, location, var) %>%
+                summarise(
+                        mean_value       = mean(value, na.rm = TRUE),
+                        median           = median(value, na.rm = TRUE),
+                        sd               = sd(value, na.rm = TRUE),
+                        cv               = DescTools::CoefVar(value, na.rm = TRUE) * 100,
+                        mean_pct_err     = mean(pct_err, na.rm = TRUE),
+                        .groups = "drop"
+                ) %>%
+                arrange(across(all_of(time.group)), location, var, analyzer)
+        
+        return(result_df)
 }
 
 # Development of function stat_table to calculate RE
@@ -1140,11 +1152,8 @@ concentration_reshaped <- pct_err(concentration_reshaped)%>%
 write_excel_csv(concentration_reshaped, "20250408-15_ringversuche_concentration_reshaped.csv")
 
 #Emissions Dataset
-emission_reshaped <-  reshaper(emission_result %>% filter(analyzer != "FTIR.4"))  
+emission_reshaped <-  reshaper(emission_result %>% filter(analyzer != "FTIR.4"))
 
-emission_reshaped <- pct_err(emission_reshaped) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-        
 # Write csv
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
@@ -1162,8 +1171,8 @@ emission_HSD <- HSD_table(data = emission_reshaped %>%
 write_excel_csv(concentration_HSD, "concentration_HSD.csv")
 write_excel_csv(emission_HSD, "emission_HSD.csv")
 
-######## SD and CV Summary #########
-emission_day_stat <- sd_cv_table(emission_reshaped,
+######## Statistical Summary #########
+emission_day_stat <- stat_table(emission_reshaped,
                                  time.group = "day",
                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3",
                                                     "CRDS.1", "CRDS.2", "CRDS.3",
@@ -1171,107 +1180,68 @@ emission_day_stat <- sd_cv_table(emission_reshaped,
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 
-emission_hour_stat <- sd_cv_table(emission_reshaped,
+emission_hour_stat <- stat_table(emission_reshaped,
                                   time.group = "hour",
                                   analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3",
                                                      "CRDS.1", "CRDS.2", "CRDS.3",
                                                      "baseline")) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
-# Delta gases daily summary
+# Absolute gases summary
+absolute_day_summary <- emission_day_stat %>%
+        filter(var %in% c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3")) %>%
+        group_by(analyzer, location, var) %>%
+        summarise(mean_value = mean(mean_value, na.rm = TRUE),
+                  sd         = mean(sd, na.rm = TRUE),
+                  cv         = mean(cv, na.rm = TRUE),
+                  mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
+                  .groups = "drop") %>% arrange(var) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+# Delta gases summary
 delta_day_summary <- emission_day_stat %>%
         filter(var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
         group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
                   .groups = "drop") %>% arrange(var) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
-# Q ventilation daily summary
+# Q ventilation summary
 q_day_summary <- emission_day_stat %>%
         filter(var == "Q_vent") %>%
-        group_by(day, analyzer, location, var) %>%
+        group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
                   .groups = "drop") %>% arrange(var) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 
-# CH4 emission daily summary
+# CH4 emission summary
 e_CH4_day_summary <- emission_day_stat %>%
         filter(var == "e_CH4_ghLU") %>%
-        group_by(day, analyzer, location, var) %>%
+        group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
                   .groups = "drop") %>% arrange(var) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 
-# NH3 emission daily summary
+# NH3 emission summary
 e_NH3_day_summary <- emission_day_stat %>%
         filter(analyzer == "baseline",
                var == "e_NH3_ghLU") %>%
-        group_by(day, analyzer, location, var) %>%
+        group_by(analyzer, location, var) %>%
         summarise(mean_value = mean(mean_value, na.rm = TRUE),
                   sd         = mean(sd, na.rm = TRUE),
                   cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-
-# Delta gases daily summary
-delta_hour_summary <- emission_hour_stat %>%
-        filter(var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
-        group_by(hour, analyzer, location, var) %>%
-        summarise(mean_value = mean(mean_value, na.rm = TRUE),
-                  sd         = mean(sd, na.rm = TRUE),
-                  cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-
-# Q ventilation daily summary
-q_hour_summary <- emission_hour_stat %>%
-        filter(var == "Q_vent") %>%
-        group_by(hour, analyzer, location, var) %>%
-        summarise(mean_value = mean(mean_value, na.rm = TRUE),
-                  sd         = mean(sd, na.rm = TRUE),
-                  cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-
-
-# CH4 emission daily summary
-e_CH4_hour_summary <- emission_hour_stat %>%
-        filter(var == "e_CH4_ghLU") %>%
-        group_by(hour, analyzer, location, var) %>%
-        summarise(mean_value = mean(mean_value, na.rm = TRUE),
-                  sd         = mean(sd, na.rm = TRUE),
-                  cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-
-# NH3 emission daily summary
-e_NH3_hour_summary <- emission_hour_stat %>%
-        filter(analyzer == "baseline",
-               var == "e_NH3_ghLU") %>%
-        group_by(hour, analyzer, location, var) %>%
-        summarise(mean_value = mean(mean_value, na.rm = TRUE),
-                  sd         = mean(sd, na.rm = TRUE),
-                  cv         = mean(cv, na.rm = TRUE),
-                  pct_err    = mean(pct_err, na.rm = TRUE),
+                  mean_pct_err    = mean(mean_pct_err, na.rm = TRUE),
                   .groups = "drop") %>% arrange(var) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
@@ -1282,11 +1252,6 @@ readr::write_excel_csv(q_day_summary, "q_day_summary.csv")
 readr::write_excel_csv(e_CH4_day_summary, "e_CH4_day_summary.csv")
 readr::write_excel_csv(e_NH3_day_summary, "e_NH3_day_summary.csv")
 
-# Save Hour CSVs
-readr::write_excel_csv(delta_hour_summary, "delta_hour_summary.csv")
-readr::write_excel_csv(q_hour_summary, "q_hour_summary.csv")
-readr::write_excel_csv(e_CH4_hour_summary, "e_CH4_hour_summary.csv")
-readr::write_excel_csv(e_NH3_hour_summary, "e_NH3_hour_summary.csv")
 
 ######## Absolute Concentration Plots ########
 c_boxplot <- emiboxplot(
@@ -1598,6 +1563,18 @@ for (plot_name in names(all_plots)) {
         
         message("Saved: ", paste0(plot_name, ".pdf"))
 }
+
+######## Environment plots #######
+emission_reshaped <-  emission_reshaped  %>%
+        mutate(location = if_else(var %in% c("temp", "wd_mst", "ws_mst", "RH"),
+                                  "weather", location))
+
+weather_trendplot <- emitrendplot(
+        data = emission_reshaped,
+        y = c("temp", "wd_mst", "ws_mst", "RH"))
+
+ggsave("weather_trendplot.pdf", plot = weather_trendplot,
+       width = 10, height = 12, units = "in", dpi = 300)
 
 ######## Linear mix modelling ##########
 colnames(emission_result)
