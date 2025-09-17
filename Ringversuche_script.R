@@ -1629,3 +1629,92 @@ linear_mixed_model("e_CH4_ghLU_N", emission_result)
 # CH4 emission rate South
 linear_mixed_model("e_CH4_ghLU_S", emission_result)
 
+
+######## Special Diagram #######
+# Load libraries
+library(ggplot2)
+library(dplyr)
+
+# Parameters
+total_minutes <- 60
+tick_interval <- 0.5
+ticks_per_cycle <- 7.5 / tick_interval  # 15 ticks per 7.5-min cycle
+n_ticks <- total_minutes / tick_interval  # 120 total
+flush_ticks <- 6
+measure_ticks <- 9
+n_segments <- total_minutes / 7.5        # 8 segments
+
+# Define label for each segment — repeated to 8 total
+segment_labels <- c("Ring Line", "North Outside", "Ring Line", "South Outside")
+segment_labels <- rep(segment_labels, length.out = n_segments)
+
+# Create tick dataframe
+df_ticks <- data.frame(tick_id = 0:(n_ticks - 1)) %>%
+        mutate(
+                # Time and position
+                time_min = tick_id * tick_interval,
+                angle_deg = 90 - (time_min / total_minutes) * 360,
+                rad = pi / 180 * angle_deg,
+                x = sin(rad),
+                y = cos(rad),
+                
+                # Segment logic
+                tick_in_segment = tick_id %% ticks_per_cycle,
+                Phase = ifelse(tick_in_segment < flush_ticks, "Flush", "Measure")
+        )
+
+# Label 0–60 minutes on inner circle
+df_labels <- df_ticks %>%
+        mutate(
+                x = 0.7 * sin(rad),
+                y = 0.7 * cos(rad),
+                label = sprintf("%.1f", time_min)
+        )
+
+# Segment labels at center of each 7.5-minute clock segment
+df_segment_labels <- data.frame(
+        segment_id = 0:(n_segments - 1),
+        label = segment_labels
+) %>%
+        mutate(
+                mid_time = segment_id * 7.5 + 7.5 / 2,
+                angle_deg = 90 - (mid_time / total_minutes) * 360,
+                rad = pi / 180 * angle_deg,
+                x = 0.95 * sin(rad),
+                y = 0.95 * cos(rad)
+        )
+
+# Plot
+ggplot(df_ticks) +
+        # Ticks
+        geom_segment(aes(x = 0.85 * x, y = 0.85 * y,
+                         xend = 1 * x, yend = 1 * y,
+                         color = Phase),
+                     linewidth = 1) +
+        
+        # Outer guide circle
+        annotate("path",
+                 x = cos(seq(0, 2 * pi, length.out = 500)),
+                 y = sin(seq(0, 2 * pi, length.out = 500)),
+                 linetype = "dashed",
+                 linewidth = 0.3,
+                 color = "gray60") +
+        
+        # Minute labels (all 120)
+        geom_text(data = df_labels,
+                  aes(x = x, y = y, label = label,
+                      angle = angle_text, hjust = hjust),
+                  size = 2, color = "black") +
+        
+        # Segment Labels
+        geom_text(data = df_segment_labels,
+                  aes(x = x, y = y, label = label),
+                  size = 5,
+                  fontface = "bold",
+                  hjust = 0.5) +
+        
+        coord_fixed() +
+        theme_void() +
+        scale_color_manual(values = c("Flush" = "#1f77b4", "Measure" = "#ff7f0e")) +
+        theme(legend.position = "bottom") +
+        ggtitle("Full 60-minute Circular Sampling Schedule with Flush & Measure Phases")
