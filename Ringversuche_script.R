@@ -245,139 +245,81 @@ pct_err <- function(df) {
                 select(-baseline_value)
 }
 
-# Development of function stat_table to calculate ICC 
-icc_table <- function(df_long, vars = NULL, time.group = NULL) {
+# Development of function HSD_table and Pairwise difference in mean values
+pairwise_diff <- function(data, var_name, group_var = "analyzer") {
         library(dplyr)
-        library(tidyr)
-        library(irr)
+        library(rstatix)
         
-        df <- df_long
+        # Filter variable
+        df_var <- data %>% filter(var == var_name)
         
-        # Filter variables if provided
-        if (!is.null(vars)) df <- df %>% filter(var %in% vars)
+        analyzers <- sort(unique(df_var[[group_var]]))
+        n <- length(analyzers)
         
-        skipped_groups <- list()
-        
-        # Determine grouping columns
-        group_cols <- c("location", "var")
-        if (!is.null(time.group)) {
-                if (!all(time.group %in% names(df))) {
-                        stop("time.group column(s) not found in the dataframe")
-                }
-                group_cols <- c(time.group, group_cols)
+        # Check if each analyzer has at least 2 values
+        counts <- df_var %>% group_by(.data[[group_var]]) %>% summarise(n = n(), .groups = "drop")
+        if(any(counts$n < 2)){
+                warning(paste("Variable", var_name, "skipped: not enough data for Tukey HSD"))
+                return(NULL)
         }
         
-        results <- df %>%
-                group_by(across(all_of(c("location", "var")))) %>%
-                summarise(
-                        icc_result = list({
-                                # Pivot wider with duplicates summarized by mean
-                                wide <- pivot_wider(cur_data(),
-                                                    names_from = analyzer,
-                                                    values_from = value,
-                                                    values_fn = mean)
-                                
-                                analyzer_cols <- setdiff(names(wide), group_cols)
-                                mat <- wide[, analyzer_cols, drop = FALSE]
-                                
-                                # Remove rows with all NA
-                                mat <- mat[rowSums(!is.na(mat)) > 0, , drop = FALSE]
-                                
-                                # Compute ICC if at least 2 analyzers and 2 rows
-                                if (ncol(mat) > 1 & nrow(mat) > 1) {
-                                        tryCatch(
-                                                suppressWarnings(irr::icc(mat, model = "twoway", type = "consistency", unit = "average")),
-                                                error = function(e) NA
-                                        )
-                                } else {
-                                        skipped_groups <<- append(skipped_groups, 
-                                                                  paste0("location=", unique(cur_data()$location),
-                                                                         ", var=", unique(cur_data()$var),
-                                                                         " (rows=", nrow(mat), ", analyzers=", ncol(mat), ")"))
-                                        NA
-                                }
-                        }),
-                        .groups = "drop"
-                ) %>%
+        # Tukey HSD
+        tuk <- tryCatch(
+                rstatix::tukey_hsd(df_var, formula = as.formula(paste("value ~", group_var))) %>%
+                        mutate(label = case_when(
+                                is.na(p.adj)    ~ "-",
+                                p.adj <= 0.001  ~ "***",
+                                p.adj <= 0.01   ~ "**",
+                                p.adj <= 0.05   ~ "*",
+                                p.adj > 0.05    ~ "ns"
+                        )),
+                error = function(e) data.frame(group1 = character(), group2 = character(), label = character())
+        )
+        
+        # Percent error
+        pct_err_df <- expand.grid(analyzer1 = analyzers, analyzer2 = analyzers, stringsAsFactors = FALSE) %>%
                 rowwise() %>%
                 mutate(
-                        ICC = tryCatch(if (inherits(icc_result, "icc")) round(icc_result$value, 2) else NA_real_, error = function(e) NA_real_),
-                        F   = tryCatch(if (inherits(icc_result, "icc")) round(icc_result$Fvalue, 2) else NA_real_, error = function(e) NA_real_),
-                        p   = tryCatch({
-                                if (inherits(icc_result, "icc")) {
-                                        pval <- icc_result$p.value
-                                        if (is.na(pval)) NA_character_
-                                        else if (pval < 0.01) formatC(pval, format = "e", digits = 2)
-                                        else as.character(round(pval, 2))
-                                } else NA_character_
-                        }, error = function(e) NA_character_),
-                        signif = tryCatch({
-                                if (inherits(icc_result, "icc")) {
-                                        pval <- icc_result$p.value
-                                        if (is.na(pval)) NA_character_
-                                        else if (pval < 0.001) "***"
-                                        else if (pval < 0.01) "**"
-                                        else if (pval < 0.05) "*"
-                                        else "ns"
-                                } else NA_character_
-                        }, error = function(e) NA_character_
-                        )) %>%
-                select(location, var, ICC, F, p, signif) %>%
+                        pct_err = if(analyzer1 == analyzer2) NA else {
+                                val1 <- mean(df_var$value[df_var[[group_var]] == analyzer1], na.rm = TRUE)
+                                val2 <- mean(df_var$value[df_var[[group_var]] == analyzer2], na.rm = TRUE)
+                                100 * (val1 - val2)/val2
+                        }
+                ) %>%
                 ungroup()
         
-        # Print skipped groups
-        if (length(skipped_groups) > 0) {
-                cat("Skipped ICC calculations for the following groups due to insufficient data:\n")
-                cat(paste0("- ", skipped_groups, collapse = "\n"), "\n\n")
+        # Fill matrix
+        mat <- matrix(NA, nrow = n, ncol = n, dimnames = list(analyzers, analyzers))
+        
+        # Lower triangle -> percent error
+        for(i in 2:n){
+                for(j in 1:(i-1)){
+                        mat[i,j] <- paste0(round(pct_err_df$pct_err[pct_err_df$analyzer1 == analyzers[i] &
+                                                                            pct_err_df$analyzer2 == analyzers[j]],1), "%")
+                }
         }
         
-        cat("ICC calculation results:\n")
-        print(results)
-        
-        return(results)
-}
-
-# Development of function HSD_table
-HSD_table <- function(data, group_var = "analyzer") {
-        
-        # Helper function to get labeled Tukey results for one variable
-        get_tukey_labels <- function(var_name) {
-                df_var <- data %>% filter(var == var_name)
-                formula <- as.formula(paste("value ~", group_var))
-                tukey_res <- rstatix::tukey_hsd(df_var, formula)
-                
-                # Add significance label
-                tukey_res <- tukey_res %>%
-                        mutate(
-                                label = case_when(
-                                        is.na(p.adj)    ~ "-",
-                                        p.adj <= 0.001  ~ "***",
-                                        p.adj <= 0.01   ~ "**",
-                                        p.adj <= 0.05   ~ "*",
-                                        p.adj > 0.05    ~ "ns"
-                                )
-                        ) %>%
-                        select(group1, group2, label) %>%
-                        rename(!!var_name := label)
-                
-                return(tukey_res)
+        # Upper triangle -> HSD
+        for(i in 1:nrow(tuk)){
+                a1 <- tuk$group1[i]
+                a2 <- tuk$group2[i]
+                if(a1 %in% analyzers & a2 %in% analyzers){
+                        row_idx <- match(a1, analyzers)
+                        col_idx <- match(a2, analyzers)
+                        mat[row_idx, col_idx] <- tuk$label[i]
+                }
         }
         
-        # Unique variables
-        vars <- unique(data$var)
+        # Diagonal -> "-"
+        for(i in 1:n){
+                mat[i,i] <- "-"
+        }
         
-        # Apply Tukey for all variables
-        results_list <- lapply(vars, get_tukey_labels)
+        # Convert to data frame
+        df <- as.data.frame(mat, stringsAsFactors = FALSE)
+        df <- cbind(analyzer = rownames(df), df)
         
-        # Join all by group1 and group2
-        combined <- Reduce(function(x, y) full_join(x, y, by = c("group1", "group2")), results_list)
-        
-        # Arrange and rename grouping columns
-        combined <- combined %>%
-                arrange(group1, group2) %>%
-                rename(analyzer.1 = group1, analyzer.2 = group2)
-        
-        return(combined)
+        return(df)
 }
 
 # Development of a Linear Mixed-Effects Model to test for interactions
@@ -1153,114 +1095,85 @@ concentration_result <- indirect.CO2.balance(input_combined) %>%
 
 concentration_reshaped <- reshaper(concentration_result) 
 
-concentration_reshaped <- pct_err(concentration_reshaped)%>%
+concentration_reshaped <- pct_err(concentration_reshaped) %>%
         mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 write_excel_csv(concentration_reshaped, "20250408-15_ringversuche_concentration_reshaped.csv")
 
 #Emissions Dataset
-emission_reshaped <-  reshaper(emission_result %>% filter(analyzer != "FTIR.4"))
+emission_reshaped <-  reshaper(emission_result %>% filter(analyzer != "FTIR.4")) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 # Write csv
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
-######## ANOVA and HSD Summary ########
-concentration_HSD <- HSD_table(data = concentration_reshaped)
+######## HSD and RE csv table ########
+# List of variables with their corresponding datasets
+vars_list <- list(emission_reshaped = c("CO2_mgm3","CH4_mgm3","NH3_mgm3",
+                                        "delta_CO2","delta_CH4","delta_NH3",
+                                        "Q_vent","e_CH4_ghLU","e_NH3_ghLU"))
 
-emission_HSD <- HSD_table(data = emission_reshaped %>%
-                                  filter(analyzer %in% c("FTIR.1",
-                                                         "FTIR.2",
-                                                         "FTIR.3",
-                                                         "CRDS.1",
-                                                         "CRDS.2",
-                                                         "CRDS.3")))
 
-write_excel_csv(concentration_HSD, "concentration_HSD.csv")
-write_excel_csv(emission_HSD, "emission_HSD.csv")
+# Loop over datasets and variables
+for(dataset_name in names(vars_list)){
+        
+        df <- get(dataset_name)  # get the data frame
+        
+        # Filter analyzers of interest
+        df <- df %>% filter(analyzer %in% c("FTIR.1","FTIR.2","FTIR.3","FTIR.4",
+                                            "CRDS.1","CRDS.2","CRDS.3","baseline"))
+        
+        for(v in vars_list[[dataset_name]]){
+                mat_df <- pairwise_diff(df, var_name = v)
+                
+                # Skip if NULL (not enough data)
+                if(is.null(mat_df)) next
+                
+                # Assign to object in global environment
+                assign(paste0(v, "_diff"), mat_df, envir = .GlobalEnv)
+                
+                # Export CSV
+                write_excel_csv(mat_df, paste0(v, "_diff.csv"))
+        }
+}
+
+######## HSD and RE TeX table ########
+library(kableExtra)
+
+for(dataset_name in names(vars_list)){
+        
+        df <- get(dataset_name)
+        
+        # Filter analyzers
+        df <- df %>% filter(analyzer %in% c("FTIR.1","FTIR.2","FTIR.3","FTIR.4",
+                                            "CRDS.1","CRDS.2","CRDS.3"))
+        
+        for(v in vars_list[[dataset_name]]){
+                mat_df <- pairwise_diff(df, var_name = v)
+                if(is.null(mat_df)) next
+                
+                # Convert to LaTeX table
+                latex_table <- mat_df %>%
+                        kable(format = "latex", booktabs = TRUE, caption = paste("Pairwise comparison for", v)) %>%
+                        kable_styling(latex_options = c("hold_position"))
+                
+                # Save .tex file in working directory
+                writeLines(latex_table, paste0(v, "_diff.tex"))
+        }
+}
 
 ######## Statistical Summary #########
-concentration_stat <- stat_table(concentration_reshaped,
+concentration_stat <- stat_table(emission_reshaped,
                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
-                                                    "CRDS.1", "CRDS.2", "CRDS.3",
-                                                    "baseline"))
+                                                    "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
 
 emission_stat <- stat_table(emission_reshaped,
-                            analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3",
-                                               "CRDS.1", "CRDS.2", "CRDS.3",
-                                               "baseline"))
+                            analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3","FTIR.4",
+                                               "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
 
-q_stat <- stat_table(emission_reshaped %>%
-                             filter(var == "Q_vent"),
-                     analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3",
-                                        "CRDS.1", "CRDS.2", "CRDS.3",
-                                        "baseline"))
-
-# Absolute gases summary
-abs_concentration_summary <- concentration_stat %>%
-        filter(var %in% c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3")) %>%
-        group_by(analyzer, location, var) %>%
-        summarise(value = mean(value, na.rm = TRUE),
-                  re   = mean(re, na.rm = TRUE),
-                  sd         = mean(baseline_sd, na.rm = TRUE),
-                  cv         = mean(baseline_cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-# Delta gases summary
-delta_concentration_summary <- concentration_stat %>%
-        filter(var %in% c("delta_CO2", "delta_CH4", "delta_NH3")) %>%
-        group_by(analyzer, location, var) %>%
-        summarise(value = mean(value, na.rm = TRUE),
-                  re   = mean(re, na.rm = TRUE),
-                  sd         = mean(baseline_sd, na.rm = TRUE),
-                  cv         = mean(baseline_cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-
-# Q ventilation summary
-q_summary <- emission_stat %>%
-        filter(var == "Q_vent") %>%
-        group_by(analyzer, location, var) %>%
-        summarise(value = mean(value, na.rm = TRUE),
-                  re   = mean(re, na.rm = TRUE),
-                  sd         = mean(baseline_sd, na.rm = TRUE),
-                  cv         = mean(baseline_cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-# CH4 emission summary
-e_CH4_summary <- emission_stat %>%
-        filter(var == "e_CH4_ghLU") %>%
-        group_by(analyzer, location, var) %>%
-        summarise(value = mean(value, na.rm = TRUE),
-                  re   = mean(re, na.rm = TRUE),
-                  sd         = mean(baseline_sd, na.rm = TRUE),
-                  cv         = mean(baseline_cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-
-# NH3 emission summary
-e_NH3_summary <- emission_stat %>%
-        filter(var == "e_NH3_ghLU") %>%
-        group_by(analyzer, location, var) %>%
-        summarise(value = mean(value, na.rm = TRUE),
-                  re   = mean(re, na.rm = TRUE),
-                  sd         = mean(baseline_sd, na.rm = TRUE),
-                  cv         = mean(baseline_cv, na.rm = TRUE),
-                  .groups = "drop") %>% arrange(var) %>%
-        mutate(across(where(is.numeric), ~ round(.x, 2)))
-
-
-# Save Day CSVs
+# Save CSV
 readr::write_excel_csv(concentration_stat, "concentration_stat.csv")
 readr::write_excel_csv(emission_stat, "emission_stat.csv")
-readr::write_excel_csv(abs_concentration_summary, "abs_concentration_summary.csv")
-readr::write_excel_csv(delta_concentration_summary, "delta_concentration_summary.csv")
-readr::write_excel_csv(q_summary, "q_summary.csv")
-readr::write_excel_csv(e_CH4_summary, "e_CH4_summary.csv")
-readr::write_excel_csv(e_NH3_summary, "e_NH3_summary.csv")
 
 
 ######## Absolute Concentration Plots ########
@@ -1271,7 +1184,8 @@ c_boxplot <- emiboxplot(
 
 c_trend_plot <- emitrendplot(
         data = concentration_reshaped,
-        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"))
+        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
+        plot_err = FALSE)
 
 all_plots_conc <- list(
         c_boxplot   = c_boxplot,
@@ -1299,7 +1213,8 @@ d_boxplot <- emiboxplot(
 
 d_trend_plot <- emitrendplot(
         data = concentration_reshaped,
-        y = c("delta_CO2", "delta_CH4", "delta_NH3"))
+        y = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        plot_err = FALSE)
 
 all_plots_delta <- list(
         d_boxplot   = d_boxplot,
@@ -1321,10 +1236,12 @@ for (plot_name in names(all_plots_delta)) {
 
 ######## Ventilation and Emission Rate Plots ########
 q_e_boxplot <- emiboxplot(data = emission_reshaped,
-                          y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"))
+                          y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
+                          plot_err = FALSE)
 
 q_e_trend_plot <- emitrendplot(data = emission_reshaped,
-                               y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"))
+                               y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
+                               plot_err = FALSE)
 
 
 all_plots_vent <- list(
@@ -1513,12 +1430,12 @@ all_plots <- list(
 
 # 2. Define custom sizes
 plot_sizes <- list(
-        d_CO2_heatmap  = c(6, 4),
-        d_CH4_heatmap  = c(6, 4),
-        d_NH3_heatmap  = c(6, 4),
-        q_heatmap      = c(8, 6),
-        e_CH4_heatmap  = c(8, 6),
-        e_NH3_heatmap  = c(8, 6)
+        d_CO2_heatmap  = c(8, 8),
+        d_CH4_heatmap  = c(8, 8),
+        d_NH3_heatmap  = c(8, 8),
+        q_heatmap      = c(8, 8),
+        e_CH4_heatmap  = c(8, 8),
+        e_NH3_heatmap  = c(8, 8)
 )
 
 # 3. Save all plots
@@ -1590,91 +1507,3 @@ linear_mixed_model("e_CH4_ghLU_N", emission_result)
 linear_mixed_model("e_CH4_ghLU_S", emission_result)
 
 
-######## Special Diagram #######
-# Load libraries
-library(ggplot2)
-library(dplyr)
-
-# Parameters
-total_minutes <- 60
-tick_interval <- 0.5
-ticks_per_cycle <- 7.5 / tick_interval  # 15 ticks per 7.5-min cycle
-n_ticks <- total_minutes / tick_interval  # 120 total
-flush_ticks <- 6
-measure_ticks <- 9
-n_segments <- total_minutes / 7.5        # 8 segments
-
-# Define label for each segment — repeated to 8 total
-segment_labels <- c("Ring Line", "North Outside", "Ring Line", "South Outside")
-segment_labels <- rep(segment_labels, length.out = n_segments)
-
-# Create tick dataframe
-df_ticks <- data.frame(tick_id = 0:(n_ticks - 1)) %>%
-        mutate(
-                # Time and position
-                time_min = tick_id * tick_interval,
-                angle_deg = 90 - (time_min / total_minutes) * 360,
-                rad = pi / 180 * angle_deg,
-                x = sin(rad),
-                y = cos(rad),
-                
-                # Segment logic
-                tick_in_segment = tick_id %% ticks_per_cycle,
-                Phase = ifelse(tick_in_segment < flush_ticks, "Flush", "Measure")
-        )
-
-# Label 0–60 minutes on inner circle
-df_labels <- df_ticks %>%
-        mutate(
-                x = 0.7 * sin(rad),
-                y = 0.7 * cos(rad),
-                label = sprintf("%.1f", time_min)
-        )
-
-# Segment labels at center of each 7.5-minute clock segment
-df_segment_labels <- data.frame(
-        segment_id = 0:(n_segments - 1),
-        label = segment_labels
-) %>%
-        mutate(
-                mid_time = segment_id * 7.5 + 7.5 / 2,
-                angle_deg = 90 - (mid_time / total_minutes) * 360,
-                rad = pi / 180 * angle_deg,
-                x = 0.95 * sin(rad),
-                y = 0.95 * cos(rad)
-        )
-
-# Plot
-ggplot(df_ticks) +
-        # Ticks
-        geom_segment(aes(x = 0.85 * x, y = 0.85 * y,
-                         xend = 1 * x, yend = 1 * y,
-                         color = Phase),
-                     linewidth = 1) +
-        
-        # Outer guide circle
-        annotate("path",
-                 x = cos(seq(0, 2 * pi, length.out = 500)),
-                 y = sin(seq(0, 2 * pi, length.out = 500)),
-                 linetype = "dashed",
-                 linewidth = 0.3,
-                 color = "gray60") +
-        
-        # Minute labels (all 120)
-        geom_text(data = df_labels,
-                  aes(x = x, y = y, label = label,
-                      angle = angle_text, hjust = hjust),
-                  size = 2, color = "black") +
-        
-        # Segment Labels
-        geom_text(data = df_segment_labels,
-                  aes(x = x, y = y, label = label),
-                  size = 5,
-                  fontface = "bold",
-                  hjust = 0.5) +
-        
-        coord_fixed() +
-        theme_void() +
-        scale_color_manual(values = c("Flush" = "#1f77b4", "Measure" = "#ff7f0e")) +
-        theme(legend.position = "bottom") +
-        ggtitle("Full 60-minute Circular Sampling Schedule with Flush & Measure Phases")
