@@ -23,6 +23,8 @@ library(multcompView)
 library(viridis)
 library(lme4)
 library(patchwork)
+library(kableExtra)
+library(knitr)
 
 ######## Development of Statistics functions #######
 # Development of indirect.CO2.balance function
@@ -246,80 +248,104 @@ pct_err <- function(df) {
 }
 
 # Development of function HSD_table and Pairwise difference in mean values
-pairwise_diff <- function(data, var_name, group_var = "analyzer") {
+pairwise_diff <- function(data, vars, locations, group_var = "analyzer") {
         library(dplyr)
         library(rstatix)
+        library(tidyr)
+        library(ggplot2)
         
-        # Filter variable
-        df_var <- data %>% filter(var == var_name)
+        df_plot_all <- list()
         
-        analyzers <- sort(unique(df_var[[group_var]]))
-        n <- length(analyzers)
-        
-        # Check if each analyzer has at least 2 values
-        counts <- df_var %>% group_by(.data[[group_var]]) %>% summarise(n = n(), .groups = "drop")
-        if(any(counts$n < 2)){
-                warning(paste("Variable", var_name, "skipped: not enough data for Tukey HSD"))
-                return(NULL)
-        }
-        
-        # Tukey HSD
-        tuk <- tryCatch(
-                rstatix::tukey_hsd(df_var, formula = as.formula(paste("value ~", group_var))) %>%
-                        mutate(label = case_when(
-                                is.na(p.adj)    ~ "-",
-                                p.adj <= 0.001  ~ "***",
-                                p.adj <= 0.01   ~ "**",
-                                p.adj <= 0.05   ~ "*",
-                                p.adj > 0.05    ~ "ns"
-                        )),
-                error = function(e) data.frame(group1 = character(), group2 = character(), label = character())
-        )
-        
-        # Percent error
-        pct_err_df <- expand.grid(analyzer1 = analyzers, analyzer2 = analyzers, stringsAsFactors = FALSE) %>%
-                rowwise() %>%
-                mutate(
-                        pct_err = if(analyzer1 == analyzer2) NA else {
-                                val1 <- mean(df_var$value[df_var[[group_var]] == analyzer1], na.rm = TRUE)
-                                val2 <- mean(df_var$value[df_var[[group_var]] == analyzer2], na.rm = TRUE)
-                                100 * (val1 - val2)/val2
+        # Loop over vars × locations
+        for(v in vars) {
+                for(loc in locations) {
+                        df_var <- data %>% filter(var == v, location == loc)
+                        analyzers <- sort(unique(df_var[[group_var]]))
+                        n <- length(analyzers)
+                        
+                        # Skip if not enough data
+                        counts <- df_var %>%
+                                group_by(.data[[group_var]]) %>%
+                                summarise(n = n(), .groups = "drop")
+                        if(any(counts$n < 2)) next
+                        
+                        # Tukey HSD
+                        tuk <- tryCatch(
+                                rstatix::tukey_hsd(df_var, formula = as.formula(paste("value ~", group_var))) %>%
+                                        mutate(label = case_when(
+                                                is.na(p.adj)    ~ "-",
+                                                p.adj <= 0.001  ~ "***",
+                                                p.adj <= 0.01   ~ "**",
+                                                p.adj <= 0.05   ~ "*",
+                                                p.adj > 0.05    ~ "ns"
+                                        )),
+                                error = function(e) data.frame(group1 = character(), group2 = character(), label = character())
+                        )
+                        
+                        # Percent error (lower triangle)
+                        pct_err_df <- expand.grid(analyzer1 = analyzers, analyzer2 = analyzers, stringsAsFactors = FALSE) %>%
+                                rowwise() %>%
+                                mutate(
+                                        pct_err = if(analyzer1 == analyzer2) NA else {
+                                                val1 <- mean(df_var$value[df_var[[group_var]] == analyzer1], na.rm = TRUE)
+                                                val2 <- mean(df_var$value[df_var[[group_var]] == analyzer2], na.rm = TRUE)
+                                                100 * (val1 - val2)/val2
+                                        }
+                                ) %>% ungroup()
+                        
+                        # Fill matrix
+                        mat <- matrix(NA, nrow = n, ncol = n, dimnames = list(analyzers, analyzers))
+                        
+                        # Lower triangle -> percent error
+                        for(i in 2:n){
+                                for(j in 1:(i-1)){
+                                        mat[i,j] <- paste0(round(pct_err_df$pct_err[pct_err_df$analyzer1 == analyzers[i] &
+                                                                                            pct_err_df$analyzer2 == analyzers[j]], 1), "%")
+                                }
                         }
-                ) %>%
-                ungroup()
-        
-        # Fill matrix
-        mat <- matrix(NA, nrow = n, ncol = n, dimnames = list(analyzers, analyzers))
-        
-        # Lower triangle -> percent error
-        for(i in 2:n){
-                for(j in 1:(i-1)){
-                        mat[i,j] <- paste0(round(pct_err_df$pct_err[pct_err_df$analyzer1 == analyzers[i] &
-                                                                            pct_err_df$analyzer2 == analyzers[j]],1), "%")
+                        
+                        # Upper triangle -> Tukey labels
+                        for(i in 1:nrow(tuk)){
+                                a1 <- tuk$group1[i]
+                                a2 <- tuk$group2[i]
+                                if(a1 %in% analyzers & a2 %in% analyzers){
+                                        row_idx <- match(a1, analyzers)
+                                        col_idx <- match(a2, analyzers)
+                                        mat[row_idx, col_idx] <- tuk$label[i]
+                                }
+                        }
+                        
+                        # Diagonal
+                        diag(mat) <- "-"
+                        
+                        # Convert to long format
+                        df_long <- as.data.frame(mat, stringsAsFactors = FALSE) %>%
+                                tibble::rownames_to_column("analyzer1") %>%
+                                pivot_longer(-analyzer1, names_to = "analyzer2", values_to = "label") %>%
+                                mutate(var = v, location = loc)
+                        
+                        df_plot_all[[paste(v, loc)]] <- df_long
                 }
         }
         
-        # Upper triangle -> HSD
-        for(i in 1:nrow(tuk)){
-                a1 <- tuk$group1[i]
-                a2 <- tuk$group2[i]
-                if(a1 %in% analyzers & a2 %in% analyzers){
-                        row_idx <- match(a1, analyzers)
-                        col_idx <- match(a2, analyzers)
-                        mat[row_idx, col_idx] <- tuk$label[i]
-                }
-        }
+        # Combine all
+        df_final <- bind_rows(df_plot_all)
         
-        # Diagonal -> "-"
-        for(i in 1:n){
-                mat[i,i] <- "-"
-        }
+        # Plot
+        p <- ggplot(df_final, aes(x = analyzer2, y = analyzer1)) +
+                geom_tile(fill = "white", color = "black") +
+                geom_text(aes(label = label), size = 3) +
+                scale_y_discrete(limits = rev) +
+                facet_grid(var ~ location, scales = "free") +
+                theme_minimal() +
+                theme(
+                        panel.grid = element_blank(),
+                        axis.title = element_blank(),
+                        strip.text = element_text(face = "bold"),
+                        axis.text.x = element_text(angle = 45, hjust = 1)
+                )
         
-        # Convert to data frame
-        df <- as.data.frame(mat, stringsAsFactors = FALSE)
-        df <- cbind(analyzer = rownames(df), df)
-        
-        return(df)
+        return(p)
 }
 
 # Development of a Linear Mixed-Effects Model to test for interactions
@@ -1107,74 +1133,12 @@ emission_reshaped <-  reshaper(emission_result %>% filter(analyzer != "FTIR.4"))
 # Write csv
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
-######## HSD and RE csv table ########
-# List of variables with their corresponding datasets
-vars_list <- list(emission_reshaped = c("CO2_mgm3","CH4_mgm3","NH3_mgm3",
-                                        "delta_CO2","delta_CH4","delta_NH3",
-                                        "Q_vent","e_CH4_ghLU","e_NH3_ghLU"))
+######## HSD and RE Matrix Plots ########
+vars <- c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3")
+locations <- c("Barn inside", "North background", "South background")
 
-
-# Loop over datasets and variables
-for(dataset_name in names(vars_list)){
-        
-        df <- get(dataset_name)  # get the data frame
-        
-        # Filter analyzers of interest
-        df <- df %>% filter(analyzer %in% c("FTIR.1","FTIR.2","FTIR.3","FTIR.4",
-                                            "CRDS.1","CRDS.2","CRDS.3","baseline"))
-        
-        for(v in vars_list[[dataset_name]]){
-                mat_df <- pairwise_diff(df, var_name = v)
-                
-                # Skip if NULL (not enough data)
-                if(is.null(mat_df)) next
-                
-                # Assign to object in global environment
-                assign(paste0(v, "_diff"), mat_df, envir = .GlobalEnv)
-                
-                # Export CSV
-                write_excel_csv(mat_df, paste0(v, "_diff.csv"))
-        }
-}
-
-######## HSD and RE TeX table ########
-library(kableExtra)
-
-for(dataset_name in names(vars_list)){
-        
-        df <- get(dataset_name)
-        
-        # Filter analyzers
-        df <- df %>% filter(analyzer %in% c("FTIR.1","FTIR.2","FTIR.3","FTIR.4",
-                                            "CRDS.1","CRDS.2","CRDS.3"))
-        
-        for(v in vars_list[[dataset_name]]){
-                mat_df <- pairwise_diff(df, var_name = v)
-                if(is.null(mat_df)) next
-                
-                # Convert to LaTeX table
-                latex_table <- mat_df %>%
-                        kable(format = "latex", booktabs = TRUE, caption = paste("Pairwise comparison for", v)) %>%
-                        kable_styling(latex_options = c("hold_position"))
-                
-                # Save .tex file in working directory
-                writeLines(latex_table, paste0(v, "_diff.tex"))
-        }
-}
-
-######## Statistical Summary #########
-concentration_stat <- stat_table(emission_reshaped,
-                                 analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
-                                                    "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
-
-emission_stat <- stat_table(emission_reshaped,
-                            analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3","FTIR.4",
-                                               "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
-
-# Save CSV
-readr::write_excel_csv(concentration_stat, "concentration_stat.csv")
-readr::write_excel_csv(emission_stat, "emission_stat.csv")
-
+p <- pairwise_diff(concentration_reshaped, vars = vars, locations = locations)
+print(p)
 
 ######## Absolute Concentration Plots ########
 c_boxplot <- emiboxplot(
