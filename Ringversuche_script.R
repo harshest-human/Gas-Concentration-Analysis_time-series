@@ -253,23 +253,40 @@ pairwise_diff <- function(data, vars, locations, group_var = "analyzer") {
         library(rstatix)
         library(tidyr)
         library(ggplot2)
+        library(tibble)
+        
+        facet_labels_expr <- c(
+                "CO2_mgm3"     = "c[CO2]",
+                "CH4_mgm3"     = "c[CH4]",
+                "NH3_mgm3"     = "c[NH3]",
+                "delta_CO2"    = "Delta*c[CO2]",
+                "delta_CH4"    = "Delta*c[CH4]",
+                "delta_NH3"    = "Delta*c[NH3]",
+                "Q_vent"       = "Q",
+                "e_CH4_gh"     = "e[CH4]",
+                "e_NH3_gh"     = "e[NH3]",
+                "e_CH4_ghLU"   = "e[CH4]",
+                "e_NH3_ghLU"   = "e[NH3]"
+        )
         
         df_plot_all <- list()
         
-        # Loop over vars × locations
-        for(v in vars) {
-                for(loc in locations) {
+        for (v in vars) {
+                for (loc in locations) {
                         df_var <- data %>% filter(var == v, location == loc)
-                        analyzers <- sort(unique(df_var[[group_var]]))
-                        n <- length(analyzers)
+                        if (nrow(df_var) == 0) next
                         
-                        # Skip if not enough data
+                        analyzers <- sort(unique(as.character(df_var[[group_var]])))
+                        if (length(analyzers) < 2) next
+                        
+                        df_var[[group_var]] <- factor(as.character(df_var[[group_var]]), levels = analyzers)
+                        
                         counts <- df_var %>%
                                 group_by(.data[[group_var]]) %>%
                                 summarise(n = n(), .groups = "drop")
-                        if(any(counts$n < 2)) next
+                        if (any(counts$n < 2)) next
                         
-                        # Tukey HSD
+                        # Tukey
                         tuk <- tryCatch(
                                 rstatix::tukey_hsd(df_var, formula = as.formula(paste("value ~", group_var))) %>%
                                         mutate(label = case_when(
@@ -282,70 +299,76 @@ pairwise_diff <- function(data, vars, locations, group_var = "analyzer") {
                                 error = function(e) data.frame(group1 = character(), group2 = character(), label = character())
                         )
                         
-                        # Percent error (lower triangle)
-                        pct_err_df <- expand.grid(analyzer1 = analyzers, analyzer2 = analyzers, stringsAsFactors = FALSE) %>%
-                                rowwise() %>%
-                                mutate(
-                                        pct_err = if(analyzer1 == analyzer2) NA else {
-                                                val1 <- mean(df_var$value[df_var[[group_var]] == analyzer1], na.rm = TRUE)
-                                                val2 <- mean(df_var$value[df_var[[group_var]] == analyzer2], na.rm = TRUE)
-                                                100 * (val1 - val2)/val2
+                        # Means → percent error
+                        means_vec <- sapply(analyzers, function(a) mean(df_var$value[df_var[[group_var]] == a], na.rm = TRUE))
+                        pctmat <- outer(means_vec, means_vec, FUN = function(a, b) 100 * (a - b) / b)
+                        pct_char <- matrix(NA_character_, nrow = length(analyzers), ncol = length(analyzers),
+                                           dimnames = list(analyzers, analyzers))
+                        pct_char[,] <- ifelse(is.nan(pctmat) | is.infinite(pctmat), NA,
+                                              as.character(round(pctmat, 1)))  # no % symbol
+                        
+                        n <- length(analyzers)
+                        final_mat <- matrix(NA_character_, nrow = n, ncol = n, dimnames = list(analyzers, analyzers))
+                        
+                        for (i in 2:n) {
+                                for (j in 1:(i - 1)) {
+                                        final_mat[i, j] <- pct_char[i, j]
+                                }
+                        }
+                        
+                        if (nrow(tuk) > 0) {
+                                tuk$group1 <- as.character(tuk$group1)
+                                tuk$group2 <- as.character(tuk$group2)
+                                for (r in seq_len(nrow(tuk))) {
+                                        g1 <- tuk$group1[r]; g2 <- tuk$group2[r]; lab <- tuk$label[r]
+                                        if (g1 %in% analyzers && g2 %in% analyzers) {
+                                                final_mat[match(g1, analyzers), match(g2, analyzers)] <- lab
                                         }
-                                ) %>% ungroup()
-                        
-                        # Fill matrix
-                        mat <- matrix(NA, nrow = n, ncol = n, dimnames = list(analyzers, analyzers))
-                        
-                        # Lower triangle -> percent error
-                        for(i in 2:n){
-                                for(j in 1:(i-1)){
-                                        mat[i,j] <- paste0(round(pct_err_df$pct_err[pct_err_df$analyzer1 == analyzers[i] &
-                                                                                            pct_err_df$analyzer2 == analyzers[j]], 1), "%")
                                 }
                         }
                         
-                        # Upper triangle -> Tukey labels
-                        for(i in 1:nrow(tuk)){
-                                a1 <- tuk$group1[i]
-                                a2 <- tuk$group2[i]
-                                if(a1 %in% analyzers & a2 %in% analyzers){
-                                        row_idx <- match(a1, analyzers)
-                                        col_idx <- match(a2, analyzers)
-                                        mat[row_idx, col_idx] <- tuk$label[i]
-                                }
-                        }
+                        diag(final_mat) <- "-"
+                        final_mat[is.na(final_mat)] <- ""
                         
-                        # Diagonal
-                        diag(mat) <- "-"
-                        
-                        # Convert to long format
-                        df_long <- as.data.frame(mat, stringsAsFactors = FALSE) %>%
-                                tibble::rownames_to_column("analyzer1") %>%
+                        df_long <- as.data.frame(final_mat, stringsAsFactors = FALSE) %>%
+                                rownames_to_column(var = "analyzer1") %>%
                                 pivot_longer(-analyzer1, names_to = "analyzer2", values_to = "label") %>%
                                 mutate(var = v, location = loc)
                         
-                        df_plot_all[[paste(v, loc)]] <- df_long
+                        df_long$analyzer2 <- factor(df_long$analyzer2, levels = analyzers)
+                        df_long$analyzer1 <- factor(df_long$analyzer1, levels = rev(analyzers))
+                        
+                        df_plot_all[[paste(v, loc, sep = "___")]] <- df_long
                 }
         }
         
-        # Combine all
-        df_final <- bind_rows(df_plot_all)
-        
-        # Plot
-        p <- ggplot(df_final, aes(x = analyzer2, y = analyzer1)) +
-                geom_tile(fill = "white", color = "black") +
-                geom_text(aes(label = label), size = 3) +
-                scale_y_discrete(limits = rev) +
-                facet_grid(var ~ location, scales = "free") +
-                theme_minimal() +
-                theme(
-                        panel.grid = element_blank(),
-                        axis.title = element_blank(),
-                        strip.text = element_text(face = "bold"),
-                        axis.text.x = element_text(angle = 45, hjust = 1)
+        if (length(df_plot_all) == 0) {
+                stop("No valid var × location combinations found (not enough data).")
+        }
+        df_final <- bind_rows(df_plot_all) %>%
+                mutate(
+                        var = factor(var, levels = vars),             
+                        location = factor(location, levels = locations)
                 )
         
+        p <- ggplot(df_final, aes(x = analyzer2, y = analyzer1)) +
+                geom_tile(color = "black", fill = "white") +
+                geom_text(aes(label = label), size = 3) +
+                scale_y_discrete(position = "right") +
+                facet_grid(var ~ location,
+                           scales = "free", space = "free", switch = "y",
+                           labeller = labeller(var = as_labeller(facet_labels_expr, label_parsed))) +
+                theme_classic() +
+                theme(
+                        axis.title = element_blank(),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+                        axis.text.y = element_text(angle = 45, hjust = 1, size = 10),
+                        strip.text = element_text(size = 12),
+                        panel.border = element_rect(colour = "black", fill = NA)
+                )
+        print(p)
         return(p)
+
 }
 
 # Development of a Linear Mixed-Effects Model to test for interactions
@@ -537,12 +560,12 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
                 labs(x = xlab_to_use, y = ylab_to_use) +
                 theme_classic() +
                 theme(
-                        text = element_text(size = 12),
-                        axis.text = element_text(size = 12),
-                        axis.title = element_text(size = 12),
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-                        strip.text.y.left = element_text(size = 12, vjust = 0.5),
-                        strip.text.x = element_text(size = 12),
+                        text = element_text(size = 14),
+                        axis.text = element_text(size = 14),
+                        axis.title = element_text(size = 14),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+                        strip.text.y.left = element_text(size = 14, vjust = 0.5),
+                        strip.text.x = element_text(size = 14),
                         panel.border = element_rect(color = "black", fill = NA),
                         legend.position = "bottom",
                         legend.title = element_blank(),
@@ -696,12 +719,12 @@ emitrendplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALS
                 labs(x = NULL, y = NULL) +
                 theme_classic() +
                 theme(
-                        text = element_text(size = 12),
-                        axis.text = element_text(size = 12),
-                        axis.title = element_text(size = 12),
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-                        strip.text.y.left = element_text(size = 12, vjust = 0.5),
-                        strip.text.x = element_text(size = 12),
+                        text = element_text(size = 14),
+                        axis.text = element_text(size = 14),
+                        axis.title = element_text(size = 14),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+                        strip.text.y.left = element_text(size = 14, vjust = 0.5),
+                        strip.text.x = element_text(size = 14),
                         panel.border = element_rect(color = "black", fill = NA),
                         legend.position = "bottom",
                         legend.title = element_blank(),
@@ -915,6 +938,87 @@ emiheatmap <- function(data, vars, locations = c("North background", "South back
         print(p)
         return(p)
 }
+
+# Development of function cv ruler plot
+emipointplot <- function(data, vars, locations = c("North background", "South background")) {
+        library(dplyr)
+        library(ggplot2)
+        
+        # --- Analyzer aesthetics ---
+        analyzer_colors <- c(
+                "FTIR.1"  = "#1b9e77", "FTIR.2"  = "#d95f02", "FTIR.3"  = "#7570b3",
+                "FTIR.4"  = "#e7298a", "CRDS.1"  = "#66a61e", "CRDS.2"  = "#e6ab02",
+                "CRDS.3"  = "#a6761d", "baseline" = "black"
+        )
+        analyzer_shapes <- c(
+                "FTIR.1"  = 0, "FTIR.2"  = 1, "FTIR.3"  = 2, "FTIR.4" = 5,
+                "CRDS.1"  = 15, "CRDS.2" = 19, "CRDS.3" = 17, "baseline" = 4
+        )
+        
+        # --- Filter variables and locations ---
+        df_filtered <- data %>%
+                filter(var %in% vars, location %in% locations)
+        
+        if (nrow(df_filtered) == 0) {
+                warning("No data found for specified variable/location.")
+                return(ggplot() + theme_void() + ggtitle("No data available"))
+        }
+        
+        # --- Ensure 'day' column exists ---
+        if (!"day" %in% colnames(df_filtered)) {
+                df_filtered <- df_filtered %>%
+                        mutate(day = as.Date(DATE.TIME))
+        }
+        
+        # --- Compute baseline and deviation ---
+        deviation_df <- df_filtered %>%
+                group_by(day, var, location) %>%
+                mutate(baseline = mean(value, na.rm = TRUE),
+                       deviation = value - baseline) %>%
+                ungroup()
+        
+        # --- CV per analyzer (per day, then summarized) ---
+        cv_df <- deviation_df %>%
+                group_by(day, var, location, analyzer) %>%
+                summarise(cv = 100 * sd(deviation, na.rm = TRUE) / mean(baseline, na.rm = TRUE),
+                          .groups = "drop")
+        
+        # --- Parsed labels for facets ---
+        facet_labels_expr <- c(
+                "CO2_mgm3"   = "c[CO2]",
+                "CH4_mgm3"   = "c[CH4]",
+                "NH3_mgm3"   = "c[NH3]",
+                "delta_CO2"  = "Delta*c[CO2]",
+                "delta_CH4"  = "Delta*c[CH4]",
+                "delta_NH3"  = "Delta*c[NH3]",
+                "Q_vent"     = "Q",
+                "e_CH4_ghLU" = "e[CH4]",
+                "e_NH3_ghLU" = "e[NH3]"
+        )
+        
+        # --- Scatter plot: x = analyzer, y = CV ---
+        p <- ggplot(cv_df, aes(x = analyzer, y = cv, color = analyzer, shape = analyzer)) +
+                geom_point(size = 3, position = position_jitter(width = 0.2, height = 0)) +
+                scale_color_manual(values = analyzer_colors) +
+                scale_shape_manual(values = analyzer_shapes) +
+                facet_grid(var ~ location,
+                           labeller = labeller(var = as_labeller(facet_labels_expr, label_parsed)),
+                           switch = "y") +
+                scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
+                theme_classic() +
+                labs(y = "CV (%)", x = "Analyzer", color = "Analyzer", shape = "Analyzer") +
+                theme(
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+                        axis.text.y = element_text(size = 10),
+                        panel.border = element_rect(color = "black", fill = NA),
+                        strip.text = element_text(size = 11),
+                        legend.position = "none"
+                )
+        
+        print(p)
+        return(p)
+}
+
 
 # Development of function Bland-altman Plot
 bland_altman_plot <- function(data, var_filter, analyzer_pair, location_filter = NULL, x = "DATE.TIME") {
@@ -1134,11 +1238,20 @@ emission_reshaped <-  reshaper(emission_result %>% filter(analyzer != "FTIR.4"))
 write_excel_csv(emission_reshaped, "20250408-15_ringversuche_emission_reshaped.csv")
 
 ######## HSD and RE Matrix Plots ########
-vars <- c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3")
-locations <- c("Barn inside", "North background", "South background")
+abs_concentration_diff <- pairwise_diff(concentration_reshaped,
+                   vars = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
+                   locations = c("Barn inside", "North background", "South background"))
 
-p <- pairwise_diff(concentration_reshaped, vars = vars, locations = locations)
-print(p)
+delta_concentration_diff <- pairwise_diff(concentration_reshaped,
+                                        vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
+                                        locations = c("North background", "South background"))
+
+vent_emission_diff <- pairwise_diff(emission_reshaped,
+                                          vars = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
+                                          locations = c("North background", "South background"))
+# save:
+ggsave("abs_concentration_diff.pdf", abs_concentration_diff, width = 12, height = 6)
+ggsave("delta_concentration_diff.pdf", delta_concentration_diff, width = 9, height = 6)
 
 ######## Absolute Concentration Plots ########
 c_boxplot <- emiboxplot(
@@ -1342,27 +1455,60 @@ ggsave("q_BlandAltman_AnalyzerB.pdf", plot = plots_B_Q,
 
 
 ######## Correlograms #######
+d_corrgram <- emicorrgram(concentration_reshaped,
+                                       target_variables = c("delta_CO2", "delta_CH4", "delta_NH3"),
+                                       locations = c("North background", "South background"))
+
 q_e_corrgram <- emicorrgram(emission_reshaped,
                             target_variables = c("e_CH4_ghLU", "e_NH3_ghLU", "Q_vent"),
                             locations = c("North background", "South background"))
 
+ggsave("d_corrgram.pdf", plot = d_corrgram,
+       width = 10, height = 6, units = "in", dpi = 300)
+
 ggsave("q_e_corrgram.pdf", plot = q_e_corrgram,
        width = 10, height = 6, units = "in", dpi = 300)
 
-######## Heatmap #########
+######## Statistical Summary #########
+concentration_stat <- stat_table(concentration_reshaped,
+                                 analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
+                                                    "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
+
+emission_stat <- stat_table(emission_reshaped,
+                            analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3","FTIR.4",
+                                               "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
+
+# Save CSV
+readr::write_excel_csv(concentration_stat, "concentration_stat.csv")
+readr::write_excel_csv(emission_stat, "emission_stat.csv")
+
+######## CV Point Plot #########
+d_cvplot <- emipointplot(
+        emission_reshaped %>%
+                filter(analyzer != "baseline"), 
+        vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        locations = c("North background", "South background"))
+
+q_e_cvplot <- emipointplot(
+        emission_reshaped %>%
+                filter(analyzer != "baseline"), 
+        vars = c("e_CH4_ghLU", "e_NH3_ghLU", "Q_vent"),
+        locations = c("North background", "South background"))
+
+######## CV Heatmap #########
 d_CO2_heatmap <- emiheatmap(
-        data = concentration_stat,
+        data = emission_stat,
         var = "delta_CO2",
         locations = c("North background", "South background"))
 
 d_CH4_heatmap <- emiheatmap(
-        data = concentration_stat,
+        data = emission_stat,
         var = "delta_CH4",
         locations = c("North background", "South background"))
 
 
 d_NH3_heatmap <- emiheatmap(
-        data = concentration_stat,
+        data = emission_stat,
         var = "delta_NH3",
         locations = c("North background", "South background"))
 
