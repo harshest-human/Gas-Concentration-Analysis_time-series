@@ -996,9 +996,9 @@ emipointplot <- function(data, vars, locations = c("North background", "South ba
                 "e_NH3_ghLU" = "e[NH3]"
         )
         
-        # --- Scatter plot: x = analyzer, y = CV ---
-        p <- ggplot(cv_df, aes(x = analyzer, y = cv, color = analyzer, shape = analyzer)) +
-                geom_point(size = 3, position = position_jitter(width = 0.2, height = 0)) +
+        # --- Scatter plot: x = day, y = CV ---
+        p <- ggplot(cv_df, aes(x = day, y = cv, color = analyzer, shape = analyzer)) +
+                geom_point(size = 3, position = position_dodge(width = 0.5)) +
                 scale_color_manual(values = analyzer_colors) +
                 scale_shape_manual(values = analyzer_shapes) +
                 facet_grid(var ~ location,
@@ -1006,19 +1006,22 @@ emipointplot <- function(data, vars, locations = c("North background", "South ba
                            switch = "y") +
                 scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
                 theme_classic() +
-                labs(y = "CV (%)", x = "Analyzer", color = "Analyzer", shape = "Analyzer") +
+                labs(y = "CV (%)", x = "Day", color = "Analyzer", shape = "Analyzer") +
                 theme(
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
-                        axis.text.y = element_text(size = 10),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+                        axis.text.y = element_text(size = 14),
                         panel.border = element_rect(color = "black", fill = NA),
-                        strip.text = element_text(size = 11),
-                        legend.position = "none"
+                        strip.text = element_text(size = 14),
+                        legend.position = "bottom"
+                ) +
+                guides(
+                        color = guide_legend(nrow = 1),
+                        shape = guide_legend(nrow = 1)
                 )
         
         print(p)
         return(p)
 }
-
 
 # Development of function Bland-altman Plot
 bland_altman_plot <- function(data, var_filter, analyzer_pair, location_filter = NULL, x = "DATE.TIME") {
@@ -1482,19 +1485,6 @@ emission_stat <- stat_table(emission_reshaped,
 readr::write_excel_csv(concentration_stat, "concentration_stat.csv")
 readr::write_excel_csv(emission_stat, "emission_stat.csv")
 
-######## CV Point Plot #########
-d_cvplot <- emipointplot(
-        emission_reshaped %>%
-                filter(analyzer != "baseline"), 
-        vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
-        locations = c("North background", "South background"))
-
-q_e_cvplot <- emipointplot(
-        emission_reshaped %>%
-                filter(analyzer != "baseline"), 
-        vars = c("e_CH4_ghLU", "e_NH3_ghLU", "Q_vent"),
-        locations = c("North background", "South background"))
-
 ######## CV Heatmap #########
 d_CO2_heatmap <- emiheatmap(
         data = emission_stat,
@@ -1562,6 +1552,23 @@ for (plot_name in names(all_plots)) {
         
         message("Saved: ", paste0(plot_name, ".pdf"))
 }
+
+######## CV Point Plot #########
+d_cvplot <- emipointplot(
+        emission_reshaped %>%
+                filter(analyzer != "baseline"), 
+        vars = c("delta_CO2", "delta_CH4", "delta_NH3"),
+        locations = c("North background", "South background"))
+
+q_e_cvplot <- emipointplot(
+        emission_reshaped %>%
+                filter(analyzer != "baseline"), 
+        vars = c("e_CH4_ghLU", "e_NH3_ghLU", "Q_vent"),
+        locations = c("North background", "South background"))
+
+# save:
+ggsave("d_cvplot.pdf", d_cvplot, width = 12, height = 8)
+ggsave("q_e_cvplot.pdf", q_e_cvplot, width = 12, height = 8)
 
 ######## Environment plots #######
 emission_reshaped <-  emission_reshaped  %>%
