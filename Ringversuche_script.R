@@ -191,48 +191,50 @@ reshaper <- function(df) {
         return(df_long)
 }
 
-# Development of function stat_table to calculate summary statistics and RE
-stat_table <- function(df_long, analyzer.levels = NULL) {
+# Development of function stat_table to calculate summary statistics
+stat_table <- function(df_long, time.group = "hour", analyzer.levels = NULL) {
+        # Load required libraries
         library(dplyr)
         library(DescTools)
-        library(lubridate)
         
+        # ---- Ensure 'day' and 'hour' columns exist ----
+        if (!("day" %in% names(df_long))) {
+                df_long <- df_long %>% mutate(day = as.Date(DATE.TIME))
+        }
+        if (!("hour" %in% names(df_long))) {
+                df_long <- df_long %>% mutate(hour = format(DATE.TIME, "%H"))
+        }
+        
+        # ---- Compute relative error vs baseline ----
         df_long <- df_long %>%
-                # Add day and hour columns
+                group_by(DATE.TIME, location, var) %>%
                 mutate(
-                        day  = factor(format(as.Date(DATE.TIME), "%Y.%m.%d")),
-                        hour = format(floor_date(DATE.TIME, unit = "hour"), "%H:%M")
-                )
+                        baseline_value = value[analyzer == "baseline"],
+                        pct_err = 100 * (value - baseline_value) / baseline_value
+                ) %>%
+                ungroup() %>%
+                select(-baseline_value)
         
-        # Filter analyzers if requested
+        # ---- Apply analyzer levels if provided ----
         if (!is.null(analyzer.levels)) {
                 df_long <- df_long %>%
                         mutate(analyzer = factor(analyzer, levels = analyzer.levels)) %>%
-                        filter(analyzer %in% analyzer.levels | analyzer == "baseline")
+                        filter(analyzer %in% analyzer.levels)
         }
         
-        # Calculate consortium metrics (exclude baseline row)
-        consortium_metrics <- df_long %>%
-                filter(analyzer != "baseline") %>%
-                group_by(DATE.TIME, day, hour, location, var) %>%
+        # ---- Summary statistics: mean, median, SD, CV, pct_err ----
+        result_df <- df_long %>%
+                group_by(across(all_of(time.group)), analyzer, location, var) %>%
                 summarise(
-                        baseline_mean = mean(value, na.rm = TRUE),
-                        baseline_sd   = sd(value, na.rm = TRUE),
-                        baseline_cv   = abs(CoefVar(value, na.rm = TRUE)) * 100,
+                        mean_value       = mean(value, na.rm = TRUE),
+                        median           = median(value, na.rm = TRUE),
+                        sd               = sd(value, na.rm = TRUE),
+                        cv               = DescTools::CoefVar(value, na.rm = TRUE) * 100,
                         .groups = "drop"
-                )
-        
-        # Join consortium metrics to all rows (including baseline)
-        df_long <- df_long %>%
-                left_join(consortium_metrics, by = c("DATE.TIME", "day", "hour", "location", "var")) %>%
-                # Compute relative error vs consortium mean
-                mutate(
-                        re = if_else(analyzer == "baseline", 0, 100 * (value - baseline_mean)/baseline_mean)
                 ) %>%
-                arrange(DATE.TIME, location, var, analyzer) %>%
-                mutate(across(where(is.numeric), ~ round(.x, 2)))
+                arrange(across(all_of(time.group)), location, var, analyzer)
         
-        return(df_long)
+        return(result_df)
 }
 
 # Development of function stat_table to calculate RE
@@ -443,6 +445,7 @@ linear_mixed_model <- function(var_name, data) {
 
 ######## Development of Plotting functions ########
 # Boxplot Function
+# Concentration Boxplot Function
 emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE) {
         library(dplyr)
         library(ggplot2)
@@ -462,21 +465,8 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
         }
         
         value_col <- if (plot_err) "pct_err" else "value"
-        if (!value_col %in% names(data)) stop("Column '", value_col, "' not found in data.")
+        if(!value_col %in% names(data)) stop("Column '", value_col, "' not found in data.")
         
-        # Remove outliers using IQR method
-        data <- data %>%
-                group_by(location, analyzer, variable, day) %>%
-                mutate(
-                        Q1 = quantile(.data[[value_col]], 0.25, na.rm = TRUE),
-                        Q3 = quantile(.data[[value_col]], 0.75, na.rm = TRUE),
-                        IQR = Q3 - Q1,
-                        is_outlier = (.data[[value_col]] < (Q1 - 1.5 * IQR)) | (.data[[value_col]] > (Q3 + 1.5 * IQR))
-                ) %>%
-                filter(!is_outlier) %>%
-                ungroup()
-        
-        # Facet labels
         facet_labels_value <- c(
                 "CO2_mgm3"     = "c[CO2]~'(mg '*m^-3*')'",
                 "CH4_mgm3"     = "c[CH4]~'(mg '*m^-3*')'",
@@ -523,7 +513,7 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
                 "n_dairycows"  = "'Number of Cows'"
         )
         
-        facet_labels_expr <- if (plot_err) facet_labels_err else facet_labels_value
+        facet_labels_expr <- if(plot_err) facet_labels_err else facet_labels_value
         
         data <- data %>%
                 mutate(facet_label = factor(
@@ -534,44 +524,44 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
         analyzer_colors <- c(
                 "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
                 "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
-                "CRDS.3" = "#a6761d", "baseline" = "darkgrey"
+                "CRDS.3" = "#a6761d", "baseline" = "black"
         )
         
         all_analyzers <- unique(data$analyzer)
         analyzer_colors_full <- setNames(rep("black", length(all_analyzers)), all_analyzers)
         analyzer_colors_full[names(analyzer_colors)] <- analyzer_colors
         
-        # No x and y axis labels
-        xlab_to_use <- NULL
-        ylab_to_use <- NULL
+        ylab_to_use <- if(plot_err) "Relative error (%)" else "Mean"
+        xlab_to_use <- "Analyzer"
         
-        p <- ggplot(data, aes(x = factor(day), y = .data[[value_col]], fill = analyzer)) +
-                geom_boxplot(outlier.shape = NA) +
-                scale_fill_manual(values = analyzer_colors_full) +
+        p <- ggplot(data, aes(x = analyzer, y = .data[[value_col]], color = analyzer)) +
+                geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+                geom_jitter(width = 0.2, alpha = 0.5, size = 1) +
+                scale_color_manual(values = analyzer_colors_full) +
                 facet_grid(facet_label ~ location, scales = "free_y", switch = "y",
                            labeller = labeller(
                                    facet_label = label_parsed,
                                    location = label_value
                            )) +
                 scale_y_continuous(
-                        breaks = scales::pretty_breaks(n = 6),
-                        labels = scales::label_number(accuracy = 1, big.mark = "")
-                ) +
-                labs(x = xlab_to_use, y = ylab_to_use) +
+                        breaks = function(limits) seq(limits[1], limits[2], length.out = 6),
+                        labels = scales::label_number(accuracy = 0.1)
+                )+
+                labs(x = NULL, y = NULL) +
                 theme_classic() +
                 theme(
                         text = element_text(size = 14),
                         axis.text = element_text(size = 14),
                         axis.title = element_text(size = 14),
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+                        axis.text.y = element_text(hjust = 1, size = 12),
                         strip.text.y.left = element_text(size = 14, vjust = 0.5),
-                        strip.text.x = element_text(size = 14),
                         panel.border = element_rect(color = "black", fill = NA),
                         legend.position = "bottom",
                         legend.title = element_blank(),
                         plot.title = element_text(hjust = 0.5)
                 ) +
-                guides(fill = guide_legend(nrow = 1))
+                guides(color = guide_legend(nrow = 1))
         
         print(p)
         return(p)
@@ -715,22 +705,23 @@ emitrendplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALS
                 scale_y_continuous(
                         breaks = scales::pretty_breaks(n = 6),
                         labels = scales::label_number(accuracy = 1, big.mark = "")
-                ) +
+                )+
                 labs(x = NULL, y = NULL) +
                 theme_classic() +
                 theme(
                         text = element_text(size = 14),
                         axis.text = element_text(size = 14),
                         axis.title = element_text(size = 14),
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+                        axis.text.y = element_text(hjust = 1, size = 12),
                         strip.text.y.left = element_text(size = 14, vjust = 0.5),
-                        strip.text.x = element_text(size = 14),
                         panel.border = element_rect(color = "black", fill = NA),
                         legend.position = "bottom",
                         legend.title = element_blank(),
                         plot.title = element_text(hjust = 0.5)
                 ) +
-                guides(color = guide_legend(nrow = 1), shape = guide_legend(nrow = 1))
+                guides(color = guide_legend(nrow = 1))
+        
         
         # Time axis formatting
         if (x == "DATE.TIME") {
@@ -858,82 +849,95 @@ emicorrgram <- function(data, target_variables, locations = NULL) {
 }
 
 # Development of function cv emiheatmap
-emiheatmap <- function(data, vars, locations = c("North background", "South background")) {
+emiheatmap <- function(data, vars, time.group, locations = c("North background", "South background")) {
+        
         library(ggplot2)
         library(dplyr)
-        library(lubridate)
-        library(tidyr)
         
-        # --- 1. Filter data for variable and locations ---
+        # --- 1. Filter the data for the specified variable and locations ---
         df_filtered <- data %>%
                 filter(var %in% vars, location %in% locations)
         
         if (nrow(df_filtered) == 0) {
-                warning("No data found for specified variable/location.")
+                warning(paste("No data found for the specified criteria. Returning empty plot."))
                 return(ggplot() + theme_void() + ggtitle("No data available"))
         }
         
-        # --- 2. Extract day and hour ---
-        df_filtered <- df_filtered %>%
-                mutate(
-                        day  = factor(format(as.Date(DATE.TIME), "%Y.%m.%d"), 
-                                      levels = sort(unique(format(as.Date(DATE.TIME), "%Y.%m.%d")))),
-                        hour = factor(format(floor_date(DATE.TIME, unit = "hour"), "%H:%M"),
-                                      levels = sprintf("%02d:00", 0:23),   # ensures 00 to 23
-                                      ordered = TRUE)
-                )
-        
-        # --- 3. Prepare facet labels ---
+        # --- 2. Generate the new, simplified facet label ---
         title_labels_expr <- c(
-                "delta_CO2"    = "Delta*c[CO2]",
-                "delta_CH4"    = "Delta*c[CH4]",
-                "delta_NH3"    = "Delta*c[NH3]",
-                "Q_vent"       = "Q",
-                "e_CH4_gh"     = "e[CH4]",
-                "e_NH3_gh"     = "e[NH3]",
-                "e_CH4_ghLU"   = "e[CH4]",
-                "e_NH3_ghLU"   = "e[NH3]"
+                "Q_vent"     = "Q",
+                "e_CH4_ghLU" = "e[CH4]",
+                "e_NH3_ghLU" = "e[NH3]"
         )
         
+        title_label <- if (vars %in% names(title_labels_expr)) {
+                title_labels_expr[[vars]]
+        } else {
+                vars
+        }
+        
+        # New label format: "var ~ by ~ (location)"
         df_prepared <- df_filtered %>%
                 mutate(
-                        facet_label_str = ifelse(var %in% names(title_labels_expr),
-                                                 paste0(title_labels_expr[var], " ~ '(", location, ")'"),
-                                                 paste0(var, " ~ '(", location, ")'"))
+                        facet_label_str = paste0(title_label, " ~ '(", location, ")'")
                 )
         
-        # --- Ordered factor for facet wrap ---
-        facet_order <- paste0(title_labels_expr[vars], " ~ '(", locations, ")'")
+        # --- 3. Create an ordered factor for facets to control plot order ---
+        facet_order <- paste0(title_label, " ~ '(", locations, ")'")
         df_prepared$facet_label <- factor(df_prepared$facet_label_str, levels = facet_order)
         
-        # --- 4. Create heatmap ---
-        p <- ggplot(df_prepared, aes(x = day, y = hour, fill = baseline_cv)) +
+        # --- 4. Determine facet layout based on time.group ---
+        if (time.group == "day") {
+                facet_cols <- length(locations) # Arrange side-by-side
+                facet_rows <- 1
+        } else if (time.group == "hour") {
+                facet_cols <- 1                 # Stack vertically
+                facet_rows <- length(locations)
+        } else {
+                stop("time.group must be either 'day' or 'hour'")
+        }
+        
+        # --- 5. Create the final faceted plot ---
+        p <- ggplot(df_prepared, aes(x = .data[[time.group]], y = analyzer, fill = cv)) +
                 geom_tile(color = "white") +
-                geom_text(aes(label = ifelse(is.na(baseline_cv), "", round(baseline_cv, 1))),
-                          size = 3, color = "black") +
+                geom_text(aes(label = ifelse(is.na(cv), "", round(cv, 1))), size = 3, color = "black") +
                 scale_fill_gradientn(
-                        colors = c("darkgreen", "green4", "green2", "yellow", "orange", "red", "darkred"),
-                        limits = c(0, 100),
-                        breaks = seq(0, 100, by = 10),
+                        colors = c(
+                                "#DAE8EB", 
+                                "#9EE1E6",
+                                "#86B0D1",
+                                "#65A5E6",
+                                "#007fff",
+                                "#626ECC",
+                                "#755CBD", 
+                                "#B257DE",
+                                "#d154bb", 
+                                "#e359b0", 
+                                "#CF3698",
+                                "#D13D4E",
+                                "#C74444",
+                                "#cc0000",
+                                "#990000"),
+                        limits = c(0, 150),
+                        breaks = seq(0, 150, by = 10),
                         name = "CV (%)",
-                        na.value = "grey90"
+                        na.value = "grey80"
                 ) +
-                facet_wrap(~ facet_label, scales = "free", ncol = length(unique(df_prepared$facet_label)),
-                           labeller = label_parsed) +
+                scale_y_discrete(position = "right") +
+                facet_wrap(~ facet_label, ncol = facet_cols, nrow = facet_rows, 
+                           scales = "free", labeller = label_parsed) +
                 labs(x = NULL, y = NULL) +
                 theme_classic() +
                 theme(
-                        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),  
-                        axis.text.y = element_text(size = 10),                  
+                        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+                        axis.text.y = element_text(size = 10),
                         strip.text = element_text(size = 10),
                         strip.background = element_rect(fill = "white", color = "black"),
                         panel.border = element_rect(color = "black", fill = NA),
                         legend.position = "bottom",
-                        legend.key.width = unit(1.5, "cm"),
-                        plot.margin = margin(t = 5, r = 10, b = 5, l = 25, unit = "pt"),
-                        panel.spacing = unit(1.5, "cm")
+                        legend.key.width = unit(2.5, "cm"),
+                        plot.margin = margin(t = 5, r = 10, b = 5, l = 25, unit = "pt")
                 )
-        
         
         print(p)
         return(p)
@@ -1474,10 +1478,12 @@ ggsave("q_e_corrgram.pdf", plot = q_e_corrgram,
 
 ######## Statistical Summary #########
 concentration_stat <- stat_table(concentration_reshaped,
+                                 time.group = "hour",
                                  analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
                                                     "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
 
 emission_stat <- stat_table(emission_reshaped,
+                            time.group = "hour",
                             analyzer.level = c("FTIR.1", "FTIR.2", "FTIR.3","FTIR.4",
                                                "CRDS.1", "CRDS.2", "CRDS.3", "baseline"))
 
@@ -1487,35 +1493,40 @@ readr::write_excel_csv(emission_stat, "emission_stat.csv")
 
 ######## CV Heatmap #########
 d_CO2_heatmap <- emiheatmap(
-        data = emission_stat,
+        data = emission_stat %>% filter(analyzer != "baseline"),
         var = "delta_CO2",
+        time.group = "hour",
         locations = c("North background", "South background"))
 
 d_CH4_heatmap <- emiheatmap(
-        data = emission_stat,
+        data = emission_stat %>% filter(analyzer != "baseline"),
         var = "delta_CH4",
+        time.group = "hour",
         locations = c("North background", "South background"))
 
-
 d_NH3_heatmap <- emiheatmap(
-        data = emission_stat,
+        data = emission_stat %>% filter(analyzer != "baseline"),
         var = "delta_NH3",
+        time.group = "hour",
         locations = c("North background", "South background"))
 
 
 q_heatmap <- emiheatmap(
-        data = emission_stat,
+        data = emission_stat %>% filter(analyzer != "baseline"),
         var = "Q_vent",
+        time.group = "hour",
         locations = c("North background", "South background"))
 
 e_CH4_heatmap <- emiheatmap(
-        data = emission_stat,
+        data = emission_stat %>% filter(analyzer != "baseline"),
         var = "e_CH4_ghLU",
+        time.group = "hour",
         locations = c("North background", "South background"))
 
 e_NH3_heatmap <- emiheatmap(
-        data = emission_stat,
+        data = emission_stat %>% filter(analyzer != "baseline"),
         var = "e_NH3_ghLU",
+        time.group = "hour",
         locations = c("North background", "South background"))
 
 # 1. Combine all plots in a named list
