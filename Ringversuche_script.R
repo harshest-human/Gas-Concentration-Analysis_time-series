@@ -545,8 +545,8 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
                            )) +
                 scale_y_continuous(
                         breaks = function(limits) seq(limits[1], limits[2], length.out = 6),
-                        labels = scales::label_number(accuracy = 0.1)
-                )+
+                        labels = scales::label_number(accuracy = 0.1, big.mark = "")
+                ) +
                 labs(x = NULL, y = NULL) +
                 theme_classic() +
                 theme(
@@ -712,7 +712,7 @@ emitrendplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALS
                         text = element_text(size = 14),
                         axis.text = element_text(size = 14),
                         axis.title = element_text(size = 14),
-                        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+                        axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
                         axis.text.y = element_text(hjust = 1, size = 12),
                         strip.text.y.left = element_text(size = 14, vjust = 0.5),
                         panel.border = element_rect(color = "black", fill = NA),
@@ -865,6 +865,9 @@ emiheatmap <- function(data, vars, time.group, locations = c("North background",
         
         # --- 2. Generate the new, simplified facet label ---
         title_labels_expr <- c(
+                "delta_CO2"   = "Delta*c[CO2]",
+                "delta_CH4"   = "Delta*c[CH4]",
+                "delta_NH3"   = "Delta*c[NH3]",
                 "Q_vent"     = "Q",
                 "e_CH4_ghLU" = "e[CH4]",
                 "e_NH3_ghLU" = "e[NH3]"
@@ -1259,6 +1262,7 @@ vent_emission_diff <- pairwise_diff(emission_reshaped,
 # save:
 ggsave("abs_concentration_diff.pdf", abs_concentration_diff, width = 12, height = 6)
 ggsave("delta_concentration_diff.pdf", delta_concentration_diff, width = 9, height = 6)
+ggsave("vent_emission_diff.pdf", vent_emission_diff, width = 9, height = 6)
 
 ######## Absolute Concentration Plots ########
 c_boxplot <- emiboxplot(
@@ -1276,8 +1280,8 @@ all_plots_conc <- list(
         c_trend_plot = c_trend_plot)
 
 plot_sizes_conc <- list(
-        c_boxplot   = c(14, 12),
-        c_trend_plot = c(16, 12))
+        c_boxplot   = c(12, 8),
+        c_trend_plot = c(12, 8))
 
 for (plot_name in names(all_plots_conc)) {
         size <- plot_sizes_conc[[plot_name]]
@@ -1634,4 +1638,15 @@ linear_mixed_model("e_CH4_ghLU_N", emission_result)
 # CH4 emission rate South
 linear_mixed_model("e_CH4_ghLU_S", emission_result)
 
+
+
+######## Means of datasets #####
+mean_abs <- concentration_reshaped %>%
+        filter(analyzer %in% c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
+                               "CRDS.1", "CRDS.2", "CRDS.3", "baseline"),
+               location == "South background") %>%
+        group_by(var, analyzer) %>%
+        summarise(mean_value = mean(value, na.rm = TRUE)) %>%
+        pivot_wider(names_from = analyzer,
+                    values_from = mean_value)
 
