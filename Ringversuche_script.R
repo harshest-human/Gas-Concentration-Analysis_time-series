@@ -444,29 +444,31 @@ linear_mixed_model <- function(var_name, data) {
 }
 
 ######## Development of Plotting functions ########
-# Boxplot Function
-# Concentration Boxplot Function
-emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE) {
+# Errorbarplot Function
+emierrorbarplot <- emimeanse_plot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE) {
         library(dplyr)
         library(ggplot2)
         library(scales)
         library(stringr)
         
+        # --- Variable renaming ---
         if ("var" %in% names(data) && !"variable" %in% names(data)) {
                 data <- data %>% rename(variable = var)
         }
         
+        # --- Filtering ---
         if (!is.null(location_filter)) {
                 data <- data %>% filter(location %in% location_filter)
         }
-        
         if (!is.null(y)) {
                 data <- data %>% filter(variable %in% y)
         }
         
+        # --- Value column selection ---
         value_col <- if (plot_err) "pct_err" else "value"
         if(!value_col %in% names(data)) stop("Column '", value_col, "' not found in data.")
         
+        # --- Facet labels ---
         facet_labels_value <- c(
                 "CO2_mgm3"     = "c[CO2]~'(mg '*m^-3*')'",
                 "CH4_mgm3"     = "c[CH4]~'(mg '*m^-3*')'",
@@ -484,36 +486,13 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
                 "temp"         = "Temperature " ~ "(°C)",
                 "RH"           = "Relative Humidity " ~ "(%)",
                 "ws_mst"       = "Wind Speed Mast " ~ "(m " *s^-1* ")",
-                "wd_mst"       = "Wind Diection Mast " ~ "(°)",
+                "wd_mst"       = "Wind Direction Mast " ~ "(°)",
                 "wd_trv"       = "Wind Direction Traverse " ~ "(°)",
                 "ws_trv"       = "Wind Speed Traverse " ~ "(m " *s^-1* ")",
                 "n_dairycows"  = "'Number of Cows'"
         )
         
-        facet_labels_err <- c(
-                "CO2_mgm3"     = "c[CO2]",
-                "CH4_mgm3"     = "c[CH4]",
-                "NH3_mgm3"     = "c[NH3]",
-                "r_CH4/CO2"    = "c[CH4]/c[CO2]",
-                "r_NH3/CO2"    = "c[NH3]/c[CO2]",
-                "delta_CO2"    = "Delta*c[CO2]",
-                "delta_CH4"    = "Delta*c[CH4]",
-                "delta_NH3"    = "Delta*c[NH3]",
-                "Q_vent"       = "Q",
-                "e_CH4_gh"     = "e[CH4]",
-                "e_NH3_gh"     = "e[NH3]",
-                "e_CH4_ghLU"   = "e[CH4]",
-                "e_NH3_ghLU"   = "e[NH3]",
-                "temp"         = "Temperature",
-                "RH"           = "Relative~Humidity",
-                "ws_mst"       = "Wind~Speed~Mast",
-                "wd_mst"       = "Wind~Direction~Mast",
-                "wd_trv"       = "Wind~Direction~Traverse",
-                "ws_trv"       = "Wind~Speed~Traverse",
-                "n_dairycows"  = "'Number of Cows'"
-        )
-        
-        facet_labels_expr <- if(plot_err) facet_labels_err else facet_labels_value
+        facet_labels_expr <- facet_labels_value
         
         data <- data %>%
                 mutate(facet_label = factor(
@@ -521,23 +500,39 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
                         levels = facet_labels_expr[y]
                 ))
         
+        # --- Colors & Shapes ---
         analyzer_colors <- c(
                 "FTIR.1" = "#1b9e77", "FTIR.2" = "#d95f02", "FTIR.3" = "#7570b3",
                 "FTIR.4" = "#e7298a", "CRDS.1" = "#66a61e", "CRDS.2" = "#e6ab02",
                 "CRDS.3" = "#a6761d", "baseline" = "black"
+        )
+        analyzer_shapes <- c(
+                "FTIR.1"  = 0, "FTIR.2"  = 1, "FTIR.3"  = 2, "FTIR.4" = 5,
+                "CRDS.1"  = 15, "CRDS.2" = 19, "CRDS.3" = 17, "baseline" = 4
         )
         
         all_analyzers <- unique(data$analyzer)
         analyzer_colors_full <- setNames(rep("black", length(all_analyzers)), all_analyzers)
         analyzer_colors_full[names(analyzer_colors)] <- analyzer_colors
         
-        ylab_to_use <- if(plot_err) "Relative error (%)" else "Mean"
-        xlab_to_use <- "Analyzer"
+        # --- Summarise mean ± SE ---
+        summary_data <- data %>%
+                group_by(analyzer, variable, location, facet_label) %>%
+                summarise(
+                        mean = mean(.data[[value_col]], na.rm = TRUE),
+                        sd   = sd(.data[[value_col]], na.rm = TRUE),
+                        n    = n(),
+                        se   = sd / sqrt(n),
+                        .groups = "drop"
+                )
         
-        p <- ggplot(data, aes(x = analyzer, y = .data[[value_col]], color = analyzer)) +
-                geom_boxplot(outlier.shape = NA, alpha = 0.7) +
-                geom_jitter(width = 0.2, alpha = 0.5, size = 1) +
+        # --- Plot ---
+        p <- ggplot(summary_data, aes(x = analyzer, y = mean, color = analyzer, shape = analyzer)) +
+                geom_point(position = position_dodge(width = 0.6), size = 3) +
+                geom_errorbar(aes(ymin = mean - se, ymax = mean + se),
+                              width = 0.2, position = position_dodge(width = 0.6)) +
                 scale_color_manual(values = analyzer_colors_full) +
+                scale_shape_manual(values = analyzer_shapes) +
                 facet_grid(facet_label ~ location, scales = "free_y", switch = "y",
                            labeller = labeller(
                                    facet_label = label_parsed,
@@ -561,7 +556,7 @@ emiboxplot <- function(data, y = NULL, location_filter = NULL, plot_err = FALSE)
                         legend.title = element_blank(),
                         plot.title = element_text(hjust = 0.5)
                 ) +
-                guides(color = guide_legend(nrow = 1))
+                guides(color = guide_legend(nrow = 1), shape = guide_legend(nrow = 1))
         
         print(p)
         return(p)
@@ -1265,22 +1260,22 @@ ggsave("delta_concentration_diff.pdf", delta_concentration_diff, width = 9, heig
 ggsave("vent_emission_diff.pdf", vent_emission_diff, width = 9, height = 6)
 
 ######## Absolute Concentration Plots ########
-c_boxplot <- emiboxplot(
-        data = concentration_reshaped,
-        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
-        plot_err = FALSE)
-
 c_trend_plot <- emitrendplot(
         data = concentration_reshaped,
         y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
         plot_err = FALSE)
 
+c_errorbarplot <- emierrorbarplot(
+        data = concentration_reshaped,
+        y = c("CO2_mgm3", "CH4_mgm3", "NH3_mgm3"),
+        plot_err = FALSE)
+
 all_plots_conc <- list(
-        c_boxplot   = c_boxplot,
+        c_errorbarplot   = c_errorbarplot,
         c_trend_plot = c_trend_plot)
 
 plot_sizes_conc <- list(
-        c_boxplot   = c(12, 8),
+        c_errorbarplot   = c(12, 8),
         c_trend_plot = c(12, 8))
 
 for (plot_name in names(all_plots_conc)) {
@@ -1294,7 +1289,7 @@ for (plot_name in names(all_plots_conc)) {
 }
 
 ######## Delta Concentration Plots ########
-d_boxplot <- emiboxplot(
+d_errorbarplot <- emierrorbarplot(
         data = concentration_reshaped,
         y = c("delta_CO2", "delta_CH4", "delta_NH3"),
         plot_err = FALSE)
@@ -1305,11 +1300,11 @@ d_trend_plot <- emitrendplot(
         plot_err = FALSE)
 
 all_plots_delta <- list(
-        d_boxplot   = d_boxplot,
+        d_errorbarplot   = d_errorbarplot,
         d_trend_plot = d_trend_plot)
 
 plot_sizes_delta <- list(
-        d_boxplot   = c(12, 8),
+        d_errorbarplot   = c(12, 8),
         d_trend_plot = c(12, 8))
 
 for (plot_name in names(all_plots_delta)) {
@@ -1323,7 +1318,7 @@ for (plot_name in names(all_plots_delta)) {
 }
 
 ######## Ventilation and Emission Rate Plots ########
-q_e_boxplot <- emiboxplot(data = emission_reshaped,
+q_e_errorbarplot <- emierrorbarplot(data = emission_reshaped,
                           y = c("Q_vent", "e_CH4_ghLU", "e_NH3_ghLU"),
                           plot_err = FALSE)
 
@@ -1333,12 +1328,12 @@ q_e_trend_plot <- emitrendplot(data = emission_reshaped,
 
 
 all_plots_vent <- list(
-        q_e_boxplot   = q_e_boxplot,
+        q_e_errorbarplot   = q_e_errorbarplot,
         q_e_trend_plot = q_e_trend_plot
 )
 
 plot_sizes_vent <- list(
-        q_e_boxplot   = c(12, 8),
+        q_e_errorbarplot   = c(12, 8),
         q_e_trend_plot = c(12, 8))
 
 for (plot_name in names(all_plots_vent)) {
@@ -1644,9 +1639,12 @@ linear_mixed_model("e_CH4_ghLU_S", emission_result)
 mean_abs <- concentration_reshaped %>%
         filter(analyzer %in% c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4",
                                "CRDS.1", "CRDS.2", "CRDS.3", "baseline"),
-               location == "South background") %>%
+               location == "Barn inside") %>%
         group_by(var, analyzer) %>%
         summarise(mean_value = mean(value, na.rm = TRUE)) %>%
         pivot_wider(names_from = analyzer,
                     values_from = mean_value)
 
+"Barn inside"
+"South background"
+"North background"
