@@ -125,7 +125,7 @@ gas_data <- read.csv("20251010_high_resolution_gas_concentration_data.csv") %>%
         mutate(DATE.TIME = ymd_hms(DATE.TIME)) 
 
 gas_avg <- gas_data %>%
-        filter(DATE.TIME >= ymd_hms("2025-08-28 13:00:00")) %>%
+        filter(DATE.TIME >= ymd_hms("2025-08-28 13:00:00"))%>%
         mutate(DATE.TIME = floor_date(DATE.TIME, unit = "hour")) %>%
         group_by(DATE.TIME, location, analyzer) %>%
         summarise(CO2_ppm = mean(CO2, na.rm = TRUE),
@@ -216,7 +216,7 @@ emission_result <- bind_rows(emission_CRDS9, emission_CRDS8) %>%
 ############# DATA Analysis ##########
 gas_avg_loc <- gas_data %>%
         filter(DATE.TIME >= ymd_hms("2025-08-28 13:00:00"),
-               !location %in% c("10","48", "52")) %>%
+               !location %in% c("52")) %>%
         group_by(location, vgroup) %>%
         summarise(CO2_ppm = mean(CO2, na.rm = TRUE),
                   CH4_ppm = mean(CH4, na.rm = TRUE),
@@ -269,22 +269,16 @@ emission_avg_loc <- emission_result %>%
         group_by(location) %>%
         summarise(
                 delta_CO2  = mean(delta_CO2, na.rm = TRUE),
-                delta_CO2_cv    = (sd(delta_CO2, na.rm = TRUE) / mean(delta_CO2, na.rm = TRUE)) * 100,
                 
                 delta_NH3  = mean(delta_NH3, na.rm = TRUE),
-                delta_NH3_cv    = (sd(delta_NH3, na.rm = TRUE) / mean(delta_NH3, na.rm = TRUE)) * 100,
                 
                 delta_CH4  = mean(delta_CH4, na.rm = TRUE),
-                delta_CH4_cv    = (sd(delta_CH4, na.rm = TRUE) / mean(delta_CH4, na.rm = TRUE)) * 100,
                 
                 Q_vent     = mean(Q_vent, na.rm = TRUE),
-                Q_vent_cv       = (sd(Q_vent, na.rm = TRUE) / mean(Q_vent, na.rm = TRUE)) * 100,
                 
                 e_CH4_ghLU = mean(e_CH4_ghLU, na.rm = TRUE),
-                e_CH4_ghLU_cv   = (sd(e_CH4_ghLU, na.rm = TRUE) / mean(e_CH4_ghLU, na.rm = TRUE)) * 100,
                 
                 e_NH3_ghLU = mean(e_NH3_ghLU, na.rm = TRUE),
-                e_NH3_ghLU_cv   = (sd(e_NH3_ghLU, na.rm = TRUE) / mean(e_NH3_ghLU, na.rm = TRUE)) * 100,
                 
                 .groups = "drop")
 
@@ -356,58 +350,68 @@ emission_avg_loc <- bind_rows(other_rows, baseline_row) %>%
         mutate(location = factor(location, levels = c(sort(as.numeric(other_rows$location)), "baseline")))
 
 ############# DATA Visualization ##########
-point_fill <- c("top" = "orange", "mid" = "green3", "bottom" = "steelblue1", "ref.ring"= "purple")
+# Define fill colors
+point_fill <- c("top" = "orange", "mid" = "green3", "bottom" = "steelblue1", "ref.ring" = "purple")
 
-# Define variables to plot and labels
-plot_vars <- list(
-        CO2_ppm_PRE      = "CO2 Relative Error (%)",
-        NH3_ppm_PRE      = "NH3 Relative Error (%)",
-        CH4_ppm_PRE      = "CH4 Relative Error (%)",
-        Q_vent_PRE       = "Q_vent Relative Error (%)",
-        e_CH4_ghLU_PRE   = "CH4 Emission Relative Error (%)",
-        e_NH3_ghLU_PRE   = "NH3 Emission Relative Error (%)"
-)
-
+# Define y-axis limits and breaks
 # y-axis limits and breaks
-y_limits <- c(-50, 50)
-y_breaks <- seq(-50, 50, by = 5)
+y_limits <- c(-60, 60)
+y_breaks <- seq(-60, 60, by = 10)
 
 # Directory to save plots
 save_dir <- "plots"
 if(!dir.exists(save_dir)) dir.create(save_dir)
 
-# Function to determine data source based on variable
-get_data_source <- function(var) {
-        if(grepl("Q_vent|e_", var)) emission_avg_loc else gas_avg_loc
+#-----------------------------
+# Data sources for each variable
+#-----------------------------
+CO2_ppm_PRE_data    <- gas_avg_loc     %>% filter(!location %in% c("10","48","baseline")) %>% arrange(location) %>% mutate(location = factor(location, levels = location))
+NH3_ppm_PRE_data    <- gas_avg_loc     %>% filter(!location %in% c("10","48","baseline")) %>% arrange(location) %>% mutate(location = factor(location, levels = location))
+CH4_ppm_PRE_data    <- gas_avg_loc     %>% filter(!location %in% c("10","48","baseline")) %>% arrange(location) %>% mutate(location = factor(location, levels = location))
+Q_vent_PRE_data     <- emission_avg_loc %>% filter(!location %in% c("10","48","baseline")) %>% arrange(location) %>% mutate(location = factor(location, levels = location))
+e_CH4_ghLU_PRE_data <- emission_avg_loc %>% filter(!location %in% c("10","48","baseline")) %>% arrange(location) %>% mutate(location = factor(location, levels = location))
+e_NH3_ghLU_PRE_data <- emission_avg_loc %>% filter(!location %in% c("10","48","baseline")) %>% arrange(location) %>% mutate(location = factor(location, levels = location))
+
+#-----------------------------
+# Helper: Lollipop plot generator
+#-----------------------------
+make_lollipop <- function(data, var, label) {
+        ggplot(data, aes(x = location, y = .data[[var]], color = vgroup)) +
+                geom_segment(aes(xend = location, y = 0, yend = .data[[var]]), linewidth = 0.8) +
+                geom_point(size = 4) +
+                geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+                scale_color_manual(values = point_fill) +
+                scale_y_continuous(limits = y_limits, breaks = y_breaks) +
+                theme_minimal(base_size = 13) +
+                theme(
+                        axis.text.x = element_text(angle = 0, vjust = 0.5),
+                        legend.position = "none"
+                ) +
+                labs(x = "Sampling point", y = label)
 }
 
-# Loop through variables
-for(var in names(plot_vars)) {
-        
-        data_source <- get_data_source(var) %>%
-                filter(!location %in% c("10","48","baseline")) %>%
-                arrange(location) %>%
-                mutate(location = factor(location, levels = location)) # set factor levels sequentially
-        
-        # Create plot
-        p <- ggplot(data_source, aes(x = location, y = .data[[var]], fill = vgroup)) +
-                geom_line(stat = "summary", fun = "mean", aes(group = 1)) +
-                geom_point(stat = "summary", fun = "mean", size = 3, shape = 21) +
-                geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
-                geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-                scale_fill_manual(values = point_fill) +
-                scale_y_continuous(limits = y_limits, breaks = y_breaks) +
-                theme_minimal() +
-                guides(fill = FALSE) +
-                labs(
-                        x = "Sampling point",
-                        y = plot_vars[[var]]
-                )
-        
-        # Save plot
-        ggsave(filename = paste0(save_dir, "/", var, ".png"), plot = p, width = 12, height = 4)
-        
-}
+#-----------------------------
+# Create individual lollipop plots
+#-----------------------------
+p_CO2_ppm_PRE    <- make_lollipop(CO2_ppm_PRE_data,    "CO2_ppm_PRE",    "CO2 Relative Error (%)")
+p_NH3_ppm_PRE    <- make_lollipop(NH3_ppm_PRE_data,    "NH3_ppm_PRE",    "NH3 Relative Error (%)")
+p_CH4_ppm_PRE    <- make_lollipop(CH4_ppm_PRE_data,    "CH4_ppm_PRE",    "CH4 Relative Error (%)")
+p_Q_vent_PRE     <- make_lollipop(Q_vent_PRE_data,     "Q_vent_PRE",     "Q_vent Relative Error (%)")
+p_e_CH4_ghLU_PRE <- make_lollipop(e_CH4_ghLU_PRE_data, "e_CH4_ghLU_PRE", "CH4 Emission Relative Error (%)")
+p_e_NH3_ghLU_PRE <- make_lollipop(e_NH3_ghLU_PRE_data, "e_NH3_ghLU_PRE", "NH3 Emission Relative Error (%)")
+
+#-----------------------------
+# Save all plots individually
+#-----------------------------
+#ggsave(paste0(save_dir, "/CO2_ppm_PRE2024.png"),    p_CO2_ppm_PRE,    width = 12, height = 4)
+#ggsave(paste0(save_dir, "/NH3_ppm_PRE2024.png"),    p_NH3_ppm_PRE,    width = 12, height = 4)
+#ggsave(paste0(save_dir, "/CH4_ppm_PRE2024.png"),    p_CH4_ppm_PRE,    width = 12, height = 4)
+ggsave(paste0(save_dir, "/CO2_ppm_PRE.png"),    p_CO2_ppm_PRE,    width = 12, height = 4)
+ggsave(paste0(save_dir, "/NH3_ppm_PRE.png"),    p_NH3_ppm_PRE,    width = 12, height = 4)
+ggsave(paste0(save_dir, "/CH4_ppm_PRE.png"),    p_CH4_ppm_PRE,    width = 12, height = 4)
+ggsave(paste0(save_dir, "/Q_vent_PRE.png"),     p_Q_vent_PRE,     width = 12, height = 4)
+ggsave(paste0(save_dir, "/e_CH4_ghLU_PRE.png"), p_e_CH4_ghLU_PRE, width = 12, height = 4)
+ggsave(paste0(save_dir, "/e_NH3_ghLU_PRE.png"), p_e_NH3_ghLU_PRE, width = 12, height = 4)
 
 ############ CV Plots ##########
 emission_cv <- emission_result %>%
